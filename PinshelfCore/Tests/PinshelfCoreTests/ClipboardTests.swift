@@ -36,8 +36,9 @@ struct ClipboardFilesTests {
         let onShelf = (url: folder.appending(path: "a.png"), modified: now.addingTimeInterval(-3600))
         let old = (url: folder.appending(path: "b.png"), modified: now.addingTimeInterval(-61))
         let fresh = (url: folder.appending(path: "c.png"), modified: now.addingTimeInterval(-10))
-        let result = ClipboardFiles.removable([onShelf, old, fresh], referencedPaths: [onShelf.url.path], now: now)
-        #expect(result == [old.url])
+        let plan = ClipboardFiles.cleanUpPlan([onShelf, old, fresh], referencedPaths: [onShelf.url.path], now: now)
+        #expect(plan.removable == [old.url])
+        #expect(plan.waiting == [fresh.url])
     }
 
     @Test("ショートカットの表示")

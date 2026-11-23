@@ -62,10 +62,10 @@ enum ClipboardImporter {
         let dated = files.map { url in
             (url: url, modified: (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
         }
-        let removable = ClipboardFiles.removable(dated, referencedPaths: referencedPaths, now: now)
-        for url in removable {
+        let plan = ClipboardFiles.cleanUpPlan(dated, referencedPaths: referencedPaths, now: now)
+        for url in plan.removable {
             try? FileManager.default.removeItem(at: url)
         }
-        return ClipboardFiles.unreferenced(files, referencedPaths: referencedPaths).count > removable.count
+        return !plan.waiting.isEmpty
     }
 }

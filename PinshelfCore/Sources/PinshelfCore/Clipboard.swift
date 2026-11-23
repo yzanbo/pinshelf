@@ -56,19 +56,30 @@ public enum ClipboardFiles {
     /// 入れたばかりの画像を残しておく長さ（秒）。書き出してから棚に置くまでの間に、片付けで消してしまわないように
     public static let gracePeriod: TimeInterval = 60
 
-    /// 片付けてよい画像のファイル（どの棚にも置いていない・入れたばかりではない）
+    /// 画像の片付けの仕分け
+    public struct CleanUpPlan: Equatable, Sendable {
+        /// 消してよい画像（どの棚にも置いていない・入れたばかりではない）
+        public let removable: [URL]
+        /// どの棚にも置いていないが、入れたばかりなので残す画像（残す期間が過ぎたら、もう一度片付ける）
+        public let waiting: [URL]
+    }
+
+    /// 画像を、消してよいものと、入れたばかりなので残すものに仕分ける（棚に置いているものは、どちらにも入らない）
     /// - Parameters:
     ///   - files: 画像のファイルと、最後に書き換えた時刻
     ///   - referencedPaths: 棚（最近閉じた棚・元に戻せる分も）に置いているファイルのパス
-    public static func removable(
+    public static func cleanUpPlan(
         _ files: [(url: URL, modified: Date)],
         referencedPaths: Set<String>,
         now: Date,
         gracePeriod: TimeInterval = gracePeriod
-    ) -> [URL] {
+    ) -> CleanUpPlan {
         let stale = Set(unreferenced(files.map(\.url), referencedPaths: referencedPaths))
-        return files
-            .filter { stale.contains($0.url) && now.timeIntervalSince($0.modified) >= gracePeriod }
-            .map(\.url)
+        let unreferencedFiles = files.filter { stale.contains($0.url) }
+        let isFresh = { (file: (url: URL, modified: Date)) in now.timeIntervalSince(file.modified) < gracePeriod }
+        return CleanUpPlan(
+            removable: unreferencedFiles.filter { !isFresh($0) }.map(\.url),
+            waiting: unreferencedFiles.filter(isFresh).map(\.url)
+        )
     }
 }

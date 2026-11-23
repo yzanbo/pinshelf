@@ -78,22 +78,14 @@ extension AppCoordinator {
         )
     }
 
-    /// どの棚にも置いていない、クリップボードの画像のファイルを片付ける（最近閉じた棚の中身も残す）
+    /// どの棚にも置いていない、クリップボードの画像のファイルを片付ける
+    /// （開いている棚に置いているもの・⌘Z で戻せるもの・最近閉じた棚に置いていたものは残す）
+    /// - Returns: 入れたばかりなので残した画像があるか（あれば、あとでもう一度片付ける）
     @discardableResult
     func cleanUpClipboardFiles() -> Bool {
-        let models = shelves.map(\.model)
-        var referenced = Set(models.flatMap(\.items).compactMap { item -> String? in
-            if case .file(let url) = item.content { url.standardizedFileURL.path } else { nil }
-        })
-        // ⌘Z で戻せるものも残す
-        referenced.formUnion(models.flatMap(\.undoableFileURLs).map(\.standardizedFileURL.path))
-        for entry in recentShelves.entries {
-            for item in entry.shelf.shelf.items {
-                if case .file(let path, _) = item.content {
-                    referenced.insert(URL(fileURLWithPath: path).standardizedFileURL.path)
-                }
-            }
-        }
+        let inShelves = shelves.flatMap(\.model.referencedFileURLs)
+        let inRecentShelves = recentShelves.filePaths.map { URL(fileURLWithPath: $0) }
+        let referenced = Set((inShelves + inRecentShelves).map(\.standardizedFileURL.path))
         return ClipboardImporter.cleanUp(keeping: referenced)
     }
 }

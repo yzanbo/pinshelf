@@ -28,16 +28,17 @@ final class ShelfPreviewSource: NSObject, QLPreviewPanelDataSource, QLPreviewPan
 
     /// この棚の一時ファイルを消す（棚を閉じたとき）
     func removeTextFiles() {
-        for url in textFiles.values {
-            try? FileManager.default.removeItem(at: url)
-        }
-        textFiles.removeAll()
+        removeTextFiles { _ in true }
     }
 
     /// 棚から外したテキストの一時ファイルを消す（見せ直すときは、また書き出す）
     private func pruneTextFiles() {
         let present = Set(model?.items.map(\.id) ?? [])
-        for (id, url) in textFiles where !present.contains(id) {
+        removeTextFiles { !present.contains($0) }
+    }
+
+    private func removeTextFiles(where shouldRemove: (ShelfItem.ID) -> Bool) {
+        for (id, url) in textFiles where shouldRemove(id) {
             try? FileManager.default.removeItem(at: url)
             textFiles[id] = nil
         }

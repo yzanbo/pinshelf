@@ -221,6 +221,13 @@ public struct RecentShelves: Equatable, Sendable {
     public mutating func clear() {
         entries.removeAll()
     }
+
+    /// 覚えている棚に置いていたファイルのパス（開き直せるうちは、クリップボードから入れた画像を片付けないように）
+    public var filePaths: [String] {
+        entries.flatMap(\.shelf.shelf.items).compactMap { item in
+            if case .file(let path, _) = item.content { path } else { nil }
+        }
+    }
 }
 
 // MARK: - 棚と保存の形式の変換

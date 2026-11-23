@@ -28,6 +28,21 @@ struct RecentShelvesTests {
         #expect(recent.entries.first?.closedAt == Date(timeIntervalSince1970: 20))
     }
 
+    @Test("覚えている棚に置いていたファイルのパスが分かる（テキストなどは含めない）")
+    func filePaths() {
+        var recent = RecentShelves()
+        let shelf = StoredShelfWindow(
+            id: UUID(),
+            frame: CGRect(x: 100, y: 100, width: 260, height: 230),
+            shelf: StoredShelf(items: [
+                StoredItem(id: UUID(), addedAt: Date(timeIntervalSince1970: 0), content: .file(path: "/tmp/a.png", bookmark: nil)),
+                StoredItem(id: UUID(), addedAt: Date(timeIntervalSince1970: 0), content: .text("memo")),
+            ])
+        )
+        recent.record(shelf)
+        #expect(recent.filePaths == ["/tmp/a.png"])
+    }
+
     @Test("空の棚は覚えない")
     func skipsEmpty() {
         var recent = RecentShelves()

@@ -128,9 +128,9 @@ final class ShelfModel {
         onChange?()
     }
 
-    /// ⌘Z で戻せるファイル（クリップボードから入れた画像を、戻せるうちは片付けないように）
-    var undoableFileURLs: [URL] {
-        undoStack.flatMap(\.removal.items).compactMap { item in
+    /// この棚が使っているファイル（置いているもの・⌘Z で戻せるもの。クリップボードから入れた画像を片付けないように）
+    var referencedFileURLs: [URL] {
+        (shelf.items + undoStack.flatMap(\.removal.items)).compactMap { item in
             if case .file(let url) = item.content { url } else { nil }
         }
     }
