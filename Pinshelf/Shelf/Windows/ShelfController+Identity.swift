@@ -28,12 +28,17 @@ extension ShelfController {
     }
 
     /// お気に入りにする・外す（名前のない棚をお気に入りにしたら、仮の名前を付ける）
-    func toggleFavorite() {
-        state.isFavorite.toggle()
-        if state.isFavorite, state.name == nil {
+    func setFavorite(_ isFavorite: Bool) {
+        guard state.isFavorite != isFavorite else { return }
+        state.isFavorite = isFavorite
+        if isFavorite, state.name == nil {
             state.name = defaultNameProvider?()
         }
         onStateChange?()
+    }
+
+    func toggleFavorite() {
+        setFavorite(!state.isFavorite)
     }
 
     /// 保存しておいた名前・色・お気に入りを戻す

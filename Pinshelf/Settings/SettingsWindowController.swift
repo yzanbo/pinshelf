@@ -17,10 +17,7 @@ final class SettingsWindowController {
         let window = self.window ?? makeWindow()
         self.window = window
         // 開いている間は Dock にアイコンを出す（Dock と ⌘Tab から戻れるように。閉じたら消える）
-        DockIcon.show(for: window)
-        // Pinshelf はふだん前面のアプリにならないので、先に前面へ出してから開く
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        DockIcon.present(window)
     }
 
     private func makeWindow() -> NSWindow {

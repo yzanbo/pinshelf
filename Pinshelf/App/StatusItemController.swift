@@ -1,28 +1,9 @@
 import AppKit
 import PinshelfCore
 
-/// メニューに出す、お気に入りの棚
-struct FavoriteShelfEntry {
-    let id: UUID
-    let title: String
-    let color: ShelfColor
-    let count: Int
-    /// 今出しているか（隠していれば false）
-    let isVisible: Bool
-}
-
-/// メニューに出す、最近閉じた棚
-struct RecentShelfEntry {
-    let id: UUID
-    let title: String
-    let color: ShelfColor
-    let count: Int
-    let closedAt: Date
-}
-
 /// メニューバーのアイコン
 ///
-/// - 押すとメニューを出す（新しい棚を開く・画面端の棚を開く・設定・終了）
+/// - 押すとメニューを出す（新しい棚を開く・画面端の棚を開く・最近閉じた棚・お気に入り・設定・終了）
 /// - ファイル・テキスト・リンクを落とすと、棚に入れる（入れ先は設定で選ぶ）
 ///
 /// アイコンのウィンドウにドラッグの種類を登録し、そのウィンドウの delegate としてドロップを受け取る
@@ -33,6 +14,10 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
     var favoriteShelves: (() -> [FavoriteShelfEntry])?
     /// お気に入りの棚を選んだ
     var onSelectFavoriteShelf: ((UUID) -> Void)?
+    /// お気に入りから削除する棚を選んだ
+    var onRemoveFavoriteShelf: ((UUID) -> Void)?
+    /// 「お気に入り一覧…」を選んだ
+    var onOpenFavorites: (() -> Void)?
     /// 「クリップボードから棚へ」を選んだ（アイコンの枠）
     var onAddFromClipboard: ((CGRect) -> Void)?
     /// 最近閉じた棚の一覧（メニューを開くたびに聞く）
@@ -81,20 +66,20 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
         paste.isEnabled = ClipboardImporter.hasContents()
         menu.addItem(paste)
         menu.addItem(makeRecentShelvesItem())
+        menu.addItem(item("お気に入り一覧…", action: #selector(openFavorites)))
 
         let favorites = favoriteShelves?() ?? []
         if !favorites.isEmpty {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "お気に入りの棚"))
             for entry in favorites {
-                let shelfItem = item(entry.title, action: #selector(selectFavoriteShelf(_:)))
+                let shelfItem = self.shelfItem(entry.title, color: entry.color, id: entry.id, action: #selector(selectFavoriteShelf(_:)))
                 shelfItem.subtitle = "\(entry.count) 個"
-                shelfItem.image = entry.color.menuImage
                 shelfItem.state = entry.isVisible ? .on : .off
-                shelfItem.representedObject = entry.id
-                shelfItem.toolTip = entry.isVisible ? "出している棚を前に出す" : "隠している棚を出す"
+                shelfItem.toolTip = entry.isVisible ? "出している棚を前に出す" : "閉じている棚を出す"
                 menu.addItem(shelfItem)
             }
+            menu.addItem(makeRemoveFavoritesItem(favorites))
         }
 
         menu.addItem(.separator())
@@ -108,6 +93,19 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         return item
+    }
+
+    /// 棚 1 つの項目（色の丸と名前。選んだときに、どの棚かが分かるよう棚の ID を持たせる）
+    private func shelfItem(_ title: String, color: ShelfColor, id: UUID, action: Selector) -> NSMenuItem {
+        let item = item(title, action: action)
+        item.image = color.menuImage
+        item.representedObject = id
+        return item
+    }
+
+    /// 選んだ棚の項目の、棚の ID
+    private static func shelfID(of item: NSMenuItem) -> UUID? {
+        item.representedObject as? UUID
     }
 
     @objc private func newShelf() { onNewShelf?() }
@@ -127,10 +125,8 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         for entry in recent {
-            let shelfItem = item(entry.title, action: #selector(reopenRecentShelf(_:)))
+            let shelfItem = self.shelfItem(entry.title, color: entry.color, id: entry.id, action: #selector(reopenRecentShelf(_:)))
             shelfItem.subtitle = "\(entry.count) 個・\(formatter.localizedString(for: entry.closedAt, relativeTo: .now))"
-            shelfItem.image = entry.color.menuImage
-            shelfItem.representedObject = entry.id
             shelfItem.toolTip = "閉じたときの位置に、中身ごと開き直す"
             submenu.addItem(shelfItem)
         }
@@ -141,15 +137,34 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
     }
 
     @objc private func reopenRecentShelf(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? UUID else { return }
-        onReopenRecentShelf?(id)
+        Self.shelfID(of: sender).map { onReopenRecentShelf?($0) }
     }
 
     @objc private func clearRecentShelves() { onClearRecentShelves?() }
 
     @objc private func selectFavoriteShelf(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? UUID else { return }
-        onSelectFavoriteShelf?(id)
+        Self.shelfID(of: sender).map { onSelectFavoriteShelf?($0) }
+    }
+
+    @objc private func openFavorites() { onOpenFavorites?() }
+
+    /// 「お気に入りから削除 ▸」。削除する棚を、この中から選ぶ
+    private func makeRemoveFavoritesItem(_ favorites: [FavoriteShelfEntry]) -> NSMenuItem {
+        let parent = NSMenuItem(title: "お気に入りから削除", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for entry in favorites {
+            let removeItem = shelfItem(entry.title, color: entry.color, id: entry.id, action: #selector(removeFavoriteShelf(_:)))
+            removeItem.toolTip = entry.isVisible
+                ? "お気に入りから外す（棚は、ふつうの棚として残る）"
+                : "お気に入りから外して閉じる（「最近閉じた棚」から開き直せる）"
+            submenu.addItem(removeItem)
+        }
+        parent.submenu = submenu
+        return parent
+    }
+
+    @objc private func removeFavoriteShelf(_ sender: NSMenuItem) {
+        Self.shelfID(of: sender).map { onRemoveFavoriteShelf?($0) }
     }
 
     // MARK: - ドロップ

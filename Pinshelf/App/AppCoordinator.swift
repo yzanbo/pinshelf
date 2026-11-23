@@ -21,6 +21,8 @@ final class AppCoordinator {
     let persistence = ShelfPersistence()
     /// 最近閉じた棚（メニューバーから開き直せる）
     var recentShelves = RecentShelves()
+    /// お気に入り一覧に出す、お気に入りの棚（棚が変わるたびに読み直す）
+    let favoritesList = FavoriteShelvesList()
 
     /// 設定のウィンドウを開く（棚の見出しのメニューから）
     var openSettings: (() -> Void)?
@@ -73,6 +75,9 @@ final class AppCoordinator {
         persistence.makeSnapshot = { [weak self] in
             self?.makeSnapshot() ?? ShelfSnapshot()
         }
+        favoritesList.load = { [weak self] in self?.favoriteShelfEntries() ?? [] }
+        favoritesList.onShow = { [weak self] id in self?.showFavoriteShelf(id: id) }
+        favoritesList.onRemove = { [weak self] id in self?.removeFavorite(id: id) }
 
         dragMonitor.onDragBegan = { [weak self] location, window in
             self?.dragBegan(at: location, startedIn: window)
@@ -116,13 +121,13 @@ final class AppCoordinator {
                 self.recentShelves.record(closed.archive())
             }
             self.shelves.removeAll { $0 === closed }
-            self.persistence.scheduleSave()
+            self.shelvesDidChange()
         }
         shelf.onMove = { [weak self] in
             self?.persistence.scheduleSave()
         }
         shelf.onStateChange = { [weak self] in
-            self?.persistence.scheduleSave()
+            self?.shelvesDidChange()
         }
         shelf.defaultNameProvider = { [weak self] in
             ShelfNaming.defaultName(existing: self?.shelves.compactMap(\.state.name) ?? [])
@@ -131,12 +136,18 @@ final class AppCoordinator {
             self?.occupiedTabRanges(excluding: shelf, edge: edge, screen: screen) ?? []
         }
         shelf.model.onChange = { [weak self] in
-            self?.persistence.scheduleSave()
+            self?.shelvesDidChange()
         }
         shelf.onOpenSettings = { [weak self] in
             self?.openSettings?()
         }
         shelves.append(shelf)
+    }
+
+    /// 棚が変わった（閉じた・名前や色・お気に入り・隠した・中身が変わった）。保存して、お気に入り一覧を読み直す
+    func shelvesDidChange() {
+        persistence.scheduleSave()
+        favoritesList.reload()
     }
 
     /// 画面端の帯が使っている縦の範囲（しまった棚の帯を、重ならないように置くため）

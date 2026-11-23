@@ -3,13 +3,14 @@ import PinshelfCore
 
 /// アプリの入口
 ///
-/// メニューバーに常駐し、ふだんは Dock には出さない（Info.plist の LSUIElement。設定を開いている間だけ出す。DockIcon）。
+/// メニューバーに常駐し、ふだんは Dock には出さない（Info.plist の LSUIElement。設定・お気に入り一覧を開いている間だけ出す。DockIcon）。
 /// メニューバーのアイコンにドロップを受けるため、SwiftUI の MenuBarExtra ではなく AppKit の NSStatusItem を使う。
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = AppCoordinator()
     private let launchAtLogin = LaunchAtLogin()
     private lazy var settingsWindow = SettingsWindowController(launchAtLogin: launchAtLogin)
+    private lazy var favoritesWindow = FavoritesWindowController(list: coordinator.favoritesList)
     private var statusItem: StatusItemController?
     private lazy var mainMenu = MainMenu(openSettings: { [weak self] in self?.openSettings() })
     /// 終了の合図（killall など）を受けて、ふつうに終了する（棚を保存してから止まる）
@@ -22,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.run()
     }
 
-    /// Dock のアイコンを押したとき（設定を開いている間だけ Dock に出る）。開いているウィンドウを前に出す
+    /// Dock のアイコンを押したとき（設定・お気に入り一覧を開いている間だけ Dock に出る）。開いているウィンドウを前に出す
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         DockIcon.bringWindowsToFront()
         return false
@@ -42,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
         statusItem.favoriteShelves = { [weak self] in self?.coordinator.favoriteShelfEntries() ?? [] }
         statusItem.onSelectFavoriteShelf = { [weak self] id in self?.coordinator.showFavoriteShelf(id: id) }
+        statusItem.onRemoveFavoriteShelf = { [weak self] id in self?.coordinator.removeFavorite(id: id) }
+        statusItem.onOpenFavorites = { [weak self] in self?.favoritesWindow.show() }
         statusItem.onAddFromClipboard = { [weak self] iconFrame in self?.coordinator.addFromClipboard(below: iconFrame) }
         statusItem.recentShelves = { [weak self] in self?.coordinator.recentShelfEntries() ?? [] }
         statusItem.onReopenRecentShelf = { [weak self] id in self?.coordinator.reopenRecentShelf(id: id) }

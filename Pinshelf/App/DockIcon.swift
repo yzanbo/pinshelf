@@ -1,6 +1,6 @@
 import AppKit
 
-/// Dock のアイコンを、ふつうのウィンドウ（設定）を開いている間だけ出す
+/// Dock のアイコンを、ふつうのウィンドウ（設定・お気に入り一覧）を開いている間だけ出す
 ///
 /// ふだんはメニューバーだけに常駐する（Info.plist の LSUIElement）。ウィンドウを開いている間は、
 /// Dock と ⌘Tab からそのウィンドウに戻れるようにする。すべて閉じたら、また Dock から消す。
@@ -23,6 +23,14 @@ enum DockIcon {
             observers[key] = (window, token)
         }
         enterDock()
+    }
+
+    /// ふつうのウィンドウ（設定・お気に入り一覧）を開いて、前に出す（開いている間は Dock に出す）
+    static func present(_ window: NSWindow) {
+        show(for: window)
+        // Pinshelf はふだん前面のアプリにならないので、先に前面へ出してから開く
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
     }
 
     /// Dock のアイコンを押したとき: 開いているウィンドウを前に出す（しまっていれば戻す）
