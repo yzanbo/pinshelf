@@ -44,7 +44,8 @@ final class WindowMoveTracker {
     }
 
     /// 自分で枠を変える（この動きは、利用者が運んだとは数えない）
-    func setFrame(_ frame: CGRect, animated: Bool) {
+    /// - Parameter timing: アニメーションの速さの変わり方（帯にたたむときは、たたむとき用のもの）
+    func setFrame(_ frame: CGRect, animated: Bool, timing: CAMediaTimingFunction = ShelfMotion.timingFunction) {
         guard let window else { return }
         // 消している途中なら、消し終えたあとに戻す枠だけを変える（動かすと、消えずに透明なまま残る）
         if isDismissing {
@@ -53,7 +54,7 @@ final class WindowMoveTracker {
         }
         isPositioning = true
         if animated {
-            animate(to: frame) {
+            animate(to: frame, timing: timing) {
                 window.animator().setFrame(frame, display: true)
             }
         } else {
@@ -82,7 +83,7 @@ final class WindowMoveTracker {
         }
         isDismissing = false
         window.orderFrontRegardless()
-        animate(to: frame) {
+        animate(to: frame, timing: ShelfMotion.timingFunction) {
             window.animator().setFrame(frame, display: true)
             window.animator().alphaValue = 1
         }
@@ -118,13 +119,13 @@ final class WindowMoveTracker {
     }
 
     /// 枠のアニメーションを始める（いちばん新しいアニメーションを終えたときだけ、自分で動かしている印を外す）
-    private func animate(to frame: CGRect, changes: () -> Void) {
+    private func animate(to frame: CGRect, timing: CAMediaTimingFunction, changes: () -> Void) {
         generation += 1
         let current = generation
         settlingFrame = frame
         NSAnimationContext.runAnimationGroup { context in
             context.duration = ShelfMotion.duration
-            context.timingFunction = ShelfMotion.timingFunction
+            context.timingFunction = timing
             changes()
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {

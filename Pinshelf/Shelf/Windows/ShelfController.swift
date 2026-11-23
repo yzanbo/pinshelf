@@ -104,6 +104,8 @@ final class ShelfController {
         ))
         // ビューの大きさでウィンドウの大きさを変えない
         hostingView.sizingOptions = []
+        // 帯にたたんでいる間は、見えていない棚の中身をつかまない（棚は透明にして置いたままにしているため）
+        interaction.canGrabItems = { [weak self] in !(self?.state.isFolded ?? true) }
         // 縁にポインタを乗せたら、その縁を光らせ、大きさを変える形のポインタにする
         hostingView.pointerMoved = { [weak self, weak hostingView] point in
             guard let self, let hostingView else { return nil }
@@ -199,14 +201,14 @@ final class ShelfController {
     // MARK: - 枠
 
     /// しまっているときの枠にする（出ていれば棚の大きさ、帯だけなら帯の大きさ）
-    func applyDockedFrame(animated: Bool) {
+    func applyDockedFrame(animated: Bool, timing: CAMediaTimingFunction = ShelfMotion.timingFunction) {
         guard case .docked(let edge) = state.placement, let screen = dockScreen else { return }
         let size = state.isUnfolded ? state.size : DockLayout.tabSize
-        setPanelFrame(DockLayout.frame(edge: edge, centerY: dockCenterY, size: size, in: screen.visibleFrame), animated: animated)
+        setPanelFrame(DockLayout.frame(edge: edge, centerY: dockCenterY, size: size, in: screen.visibleFrame), animated: animated, timing: timing)
     }
 
     /// 枠を変える（自分で動かした枠なので、利用者が運んだとは数えない）
-    func setPanelFrame(_ frame: CGRect, animated: Bool) {
-        moveTracker.setFrame(frame, animated: animated)
+    func setPanelFrame(_ frame: CGRect, animated: Bool, timing: CAMediaTimingFunction = ShelfMotion.timingFunction) {
+        moveTracker.setFrame(frame, animated: animated, timing: timing)
     }
 }

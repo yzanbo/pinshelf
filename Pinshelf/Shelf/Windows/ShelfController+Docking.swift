@@ -118,11 +118,12 @@ extension ShelfController {
         guard state.isDocked, state.isUnfolded else { return }
         previewSource.close()
         pointerWatcher.stop()
-        withAnimation(ShelfMotion.animation) {
+        // すぐに動き出して、画面の端に向かってなめらかに止まる。棚は、滑り込んでいる間は見えたままにする
+        withAnimation(ShelfMotion.foldFadeAnimation) {
             state.isUnfolded = false
         }
         isUnfoldedByDrag = false
-        applyDockedFrame(animated: true)
+        applyDockedFrame(animated: true, timing: ShelfMotion.foldTimingFunction)
     }
 
     /// 開いた棚を帯にたたむ（見出しの › ボタン・ポインタが離れたとき）

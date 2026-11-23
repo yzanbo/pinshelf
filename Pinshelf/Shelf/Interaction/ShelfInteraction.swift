@@ -9,6 +9,8 @@ final class ShelfInteraction {
     let preview: ShelfPreviewSource
     /// 棚から外へドラッグで取り出す係
     private let dragSource: ShelfDragSource
+    /// 中身をつかめるか（帯にたたんでいる間は、見えていない棚の中身をつかまないよう false を返す）
+    var canGrabItems: () -> Bool = { true }
 
     init(model: ShelfModel, panel: ShelfPanel) {
         preview = ShelfPreviewSource(model: model, panel: panel)
@@ -24,9 +26,9 @@ final class ShelfInteraction {
         model.onQuickLookRequest = { [weak preview] in preview?.show() }
 
         // 棚から外へドラッグで取り出す
-        panel.mouseHandler = { [weak panel, weak dragSource] event in
-            guard let view = panel?.contentView, let dragSource else { return false }
-            return dragSource.handle(event, in: view)
+        panel.mouseHandler = { [weak self, weak panel] event in
+            guard let self, self.canGrabItems(), let view = panel?.contentView else { return false }
+            return self.dragSource.handle(event, in: view)
         }
     }
 }

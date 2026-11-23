@@ -38,45 +38,20 @@ struct ShelfView: View {
     @State private var isTargeted = false
 
     var body: some View {
-        // 帯と棚を重ね、フェードで入れ替える。どちらも実物の大きさのまま、しまう端と反対の側に寄せて置き、
-        // ウィンドウの枠で切り抜く。枠の内側の辺と一緒に棚が動くので、たたむと端へ滑り込み、開くと端から滑り出る
-        ZStack(alignment: contentAlignment) {
-            if state.isFolded, let edge = state.dockedEdge {
-                // 画面端にしまっている: 件数つきの細い帯だけを見せる
-                EdgeTab(
-                    count: model.items.count,
-                    edge: edge,
-                    name: state.name,
-                    tint: state.color.color,
-                    isTargeted: isTargeted
-                )
-                    .frame(width: DockLayout.tabSize.width, height: DockLayout.tabSize.height)
-                    .onTapGesture(perform: actions.unfold)
-                    .transition(.opacity)
-            } else {
-                shelf
-                    // ふだんは決まった大きさで描く（しまう・出すときに、枠が変わっても中身の大きさは変えないため）。
-                    // 縁をつかんで大きさを変えている間は、ウィンドウいっぱいに描く（枠の変化に遅れずについていく）
-                    .frame(width: state.isResizing ? nil : state.size.width, height: state.isResizing ? nil : state.size.height)
-                    .frame(maxWidth: state.isResizing ? .infinity : nil, maxHeight: state.isResizing ? .infinity : nil)
-                    // ポインタを乗せている縁を光らせる
-                    .overlay {
-                        ResizeHighlight(handle: state.hoveredResizeHandle)
-                    }
-                    // 縁（辺と角）をつかんで運ぶと、大きさが変わる
-                    .overlay {
-                        ResizeHandles(
-                            handles: ResizeHandle.available(dockedEdge: state.dockedEdge),
-                            onBegin: actions.beginResize,
-                            onChange: actions.resize,
-                            onEnd: actions.endResize
-                        )
-                    }
-                    .transition(.opacity)
+        // 帯と棚を重ね、透明度で入れ替える。どちらもウィンドウいっぱいの枠の中に実物の大きさのまま置き、ウィンドウの枠で切り抜く。
+        // - 棚は、しまう端と反対の側に寄せる。枠の内側の辺と一緒に棚が動くので、たたむと端へ滑り込み、開くと端から滑り出る
+        // - 帯は、しまう端の側に寄せる。枠が縮む・広がる途中も、画面の端に付いたまま動かない
+        // 出す・消すの切り替え（transition）にしないのは、SwiftUI が消えていく途中の部品の置き場所を消え始めたときのまま固定し、
+        // 枠が動いても寄せる位置についてこない（ウィンドウの左上に貼り付いたまま動き、画面の端から離れて見える）ため
+        ZStack {
+            shelfLayer
+                .shown(!state.isFolded)
+            if let edge = state.dockedEdge {
+                tabLayer(edge: edge)
+                    .shown(state.isFolded)
             }
         }
-        // 中身のほうが大きくても枠をウィンドウの大きさにとどめ、はみ出した分は切り抜く（min を 0 にしないと、枠が中身の大きさまで広がる）
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: contentAlignment)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
         // 浮いた棚は、出るときに少し小さい状態から実物大にふわっと広げる（しまった棚は、端から滑り込むだけ）
         .scaleEffect(state.isPresented || state.isDocked ? 1 : ShelfMotion.appearScale)
@@ -84,7 +59,46 @@ struct ShelfView: View {
         .coordinateSpace(.named(ShelfDragSource.coordinateSpace))
     }
 
-    /// 中身を寄せる位置（しまっているときは、しまう端と反対の側）
+    /// 画面端にしまっているときの、件数つきの細い帯。しまう端の側に寄せる（枠が縮む・広がる途中も、画面の端に付いたまま）
+    private func tabLayer(edge: ScreenEdge) -> some View {
+        EdgeTab(
+            count: model.items.count,
+            edge: edge,
+            name: state.name,
+            tint: state.color.color,
+            isTargeted: isTargeted
+        )
+            .frame(width: DockLayout.tabSize.width, height: DockLayout.tabSize.height)
+            .onTapGesture(perform: actions.unfold)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .right ? .trailing : .leading)
+    }
+
+    /// 棚（見出しと中身）。帯にたたんでいる間も、透明にして置いておく
+    private var shelfLayer: some View {
+        shelf
+            // ふだんは決まった大きさで描く（しまう・出すときに、枠が変わっても中身の大きさは変えないため）。
+            // 縁をつかんで大きさを変えている間は、ウィンドウいっぱいに描く（枠の変化に遅れずについていく）
+            .frame(width: state.isResizing ? nil : state.size.width, height: state.isResizing ? nil : state.size.height)
+            .frame(maxWidth: state.isResizing ? .infinity : nil, maxHeight: state.isResizing ? .infinity : nil)
+            // ポインタを乗せている縁を光らせる
+            .overlay {
+                ResizeHighlight(handle: state.hoveredResizeHandle)
+            }
+            // 縁（辺と角）をつかんで運ぶと、大きさが変わる
+            .overlay {
+                ResizeHandles(
+                    handles: ResizeHandle.available(dockedEdge: state.dockedEdge),
+                    onBegin: actions.beginResize,
+                    onChange: actions.resize,
+                    onEnd: actions.endResize
+                )
+            }
+            // 棚のほうが大きくても枠をウィンドウの大きさにとどめ、はみ出した分は切り抜く（min を 0 にしないと、枠が棚の大きさまで広がる）
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: contentAlignment)
+            .clipped()
+    }
+
+    /// 棚を寄せる位置（しまっているときは、しまう端と反対の側）
     private var contentAlignment: Alignment {
         switch state.dockedEdge {
         case .right: .leading
@@ -106,5 +120,14 @@ struct ShelfView: View {
                     lineWidth: state.color == .none ? 1 : 1.5
                 )
         )
+    }
+}
+
+private extension View {
+    /// 見せる・隠す（置いたまま透明にする。隠している間は、クリックも読み上げも受けない）
+    func shown(_ isShown: Bool) -> some View {
+        opacity(isShown ? 1 : 0)
+            .allowsHitTesting(isShown)
+            .accessibilityHidden(!isShown)
     }
 }
