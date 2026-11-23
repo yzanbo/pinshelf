@@ -2,6 +2,12 @@
   <img src="Pinshelf/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="128" alt="Pinshelf のアイコン">
 </p>
 
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue.svg" alt="PolyForm Shield License 1.0.0"></a>
+  <img src="https://img.shields.io/badge/macOS-26%2B-lightgrey.svg" alt="macOS 26+">
+  <img src="https://img.shields.io/badge/Swift-6-orange.svg" alt="Swift 6">
+</p>
+
 # Pinshelf
 
 ドラッグ中のファイルを一時的に置いておく、macOS の「棚」アプリです。
@@ -618,3 +624,9 @@ Xcode では ⌘U（`PinshelfCoreTests`）でも流せます。
 - 棚ごとのショートカット・棚を番号で切り替える（C の残り）
 - 押している間は出さない（B の残り）
 - グローバルホットキー
+
+## ライセンス
+
+[PolyForm Shield License 1.0.0](LICENSE)
+
+Pinshelf のソースコードは公開していますが、オープンソースのライセンスではありません。使う・改変する・配ることはできますが、Pinshelf と競合する製品（または、作者が Pinshelf を使って提供する製品と競合する製品）を提供するために使うことはできません。正確な条件は、[ライセンスの本文](LICENSE)（英語）を見てください。
