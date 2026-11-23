@@ -48,8 +48,27 @@ public enum ClipboardFiles {
         return "\(base) \(number).\(ext)"
     }
 
-    /// どの棚にも置いていない画像のファイル（起動したときに片付ける）
+    /// どの棚にも置いていない画像のファイル
     public static func unreferenced(_ files: [URL], referencedPaths: Set<String>) -> [URL] {
         files.filter { !referencedPaths.contains($0.standardizedFileURL.path) }
+    }
+
+    /// 入れたばかりの画像を残しておく長さ（秒）。書き出してから棚に置くまでの間に、片付けで消してしまわないように
+    public static let gracePeriod: TimeInterval = 60
+
+    /// 片付けてよい画像のファイル（どの棚にも置いていない・入れたばかりではない）
+    /// - Parameters:
+    ///   - files: 画像のファイルと、最後に書き換えた時刻
+    ///   - referencedPaths: 棚（最近閉じた棚・元に戻せる分も）に置いているファイルのパス
+    public static func removable(
+        _ files: [(url: URL, modified: Date)],
+        referencedPaths: Set<String>,
+        now: Date,
+        gracePeriod: TimeInterval = gracePeriod
+    ) -> [URL] {
+        let stale = Set(unreferenced(files.map(\.url), referencedPaths: referencedPaths))
+        return files
+            .filter { stale.contains($0.url) && now.timeIntervalSince($0.modified) >= gracePeriod }
+            .map(\.url)
     }
 }

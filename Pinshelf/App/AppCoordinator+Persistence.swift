@@ -79,11 +79,14 @@ extension AppCoordinator {
     }
 
     /// どの棚にも置いていない、クリップボードの画像のファイルを片付ける（最近閉じた棚の中身も残す）
-    func cleanUpClipboardFiles() {
+    @discardableResult
+    func cleanUpClipboardFiles() -> Bool {
         let models = shelves.map(\.model)
         var referenced = Set(models.flatMap(\.items).compactMap { item -> String? in
             if case .file(let url) = item.content { url.standardizedFileURL.path } else { nil }
         })
+        // ⌘Z で戻せるものも残す
+        referenced.formUnion(models.flatMap(\.undoableFileURLs).map(\.standardizedFileURL.path))
         for entry in recentShelves.entries {
             for item in entry.shelf.shelf.items {
                 if case .file(let path, _) = item.content {
@@ -91,6 +94,6 @@ extension AppCoordinator {
                 }
             }
         }
-        ClipboardImporter.cleanUp(keeping: referenced)
+        return ClipboardImporter.cleanUp(keeping: referenced)
     }
 }

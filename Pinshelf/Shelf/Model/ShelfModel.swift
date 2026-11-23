@@ -128,6 +128,13 @@ final class ShelfModel {
         onChange?()
     }
 
+    /// ⌘Z で戻せるファイル（クリップボードから入れた画像を、戻せるうちは片付けないように）
+    var undoableFileURLs: [URL] {
+        undoStack.flatMap(\.removal.items).compactMap { item in
+            if case .file(let url) = item.content { url } else { nil }
+        }
+    }
+
     /// 最後に取り除いたものを、元の位置に戻す（⌘Z）
     func undoRemoval() {
         guard let last = undoStack.popLast() else { return }

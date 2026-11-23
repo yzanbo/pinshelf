@@ -210,6 +210,23 @@ struct ShelfSnapshotStoreTests {
         #expect(FileManager.default.fileExists(atPath: moved.path))
         #expect(!FileManager.default.fileExists(atPath: file.path))
     }
+
+    @Test("脇へ移した読めなかったファイルは、新しいものから 3 つだけ残す")
+    func keepsFewUnreadableFiles() throws {
+        let directory = try makeTemporaryDirectory()
+        let file = directory.appending(path: "shelves.json")
+        // 前に 4 回壊れて、脇へ移したファイルがある（ほかのファイルは消さない）
+        for stamp in [1_000, 2_000, 3_000, 4_000] {
+            try Data("x".utf8).write(to: directory.appending(path: "shelves.broken-\(stamp).json"))
+        }
+        try Data("keep".utf8).write(to: directory.appending(path: "other.json"))
+        try Data("{ broken".utf8).write(to: file)
+
+        ShelfSnapshotStore(fileURL: file).moveAsideUnreadableFile(now: Date(timeIntervalSince1970: 5_000))
+
+        let names = Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+        #expect(names == ["shelves.broken-5000.json", "shelves.broken-4000.json", "shelves.broken-3000.json", "other.json"])
+    }
 }
 
 @Suite("macOS のブックマーク")

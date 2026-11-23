@@ -190,6 +190,7 @@ final class ShelfController {
         guard !isDiscarded else { return }
         isDiscarded = true
         previewSource.close()
+        previewSource.removeTextFiles()
         pointerWatcher.stop()
         dismissPanel()
         moveTracker.stop()

@@ -45,9 +45,30 @@ public struct ShelfSnapshotStore: Sendable {
         let destination = fileURL.deletingPathExtension().appendingPathExtension("broken-\(stamp).json")
         do {
             try FileManager.default.moveItem(at: fileURL, to: destination)
-            return destination
         } catch {
             return nil
+        }
+        removeOldUnreadableFiles()
+        return destination
+    }
+
+    /// 脇へ移した読めなかったファイルを、いくつまで残すか（何度も壊れても、たまり続けないように）
+    public static let unreadableFileLimit = 3
+
+    /// 脇へ移した読めなかったファイルのうち、新しいものから limit 個を残して、古いものを消す
+    public func removeOldUnreadableFiles(keeping limit: Int = unreadableFileLimit) {
+        let folder = fileURL.deletingLastPathComponent()
+        let prefix = fileURL.deletingPathExtension().lastPathComponent + ".broken-"
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return }
+        // 「shelves.broken-<時刻>.json」の時刻で、新しい順に並べる
+        let unreadable = files.compactMap { url -> (url: URL, stamp: Int)? in
+            let name = url.deletingPathExtension().lastPathComponent
+            guard name.hasPrefix(prefix), url.pathExtension == "json", let stamp = Int(name.dropFirst(prefix.count)) else { return nil }
+            return (url, stamp)
+        }
+        .sorted { $0.stamp > $1.stamp }
+        for old in unreadable.dropFirst(limit) {
+            try? FileManager.default.removeItem(at: old.url)
         }
     }
 }

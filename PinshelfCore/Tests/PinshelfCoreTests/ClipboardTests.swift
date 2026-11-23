@@ -29,6 +29,17 @@ struct ClipboardFilesTests {
         #expect(result == [stale])
     }
 
+    @Test("入れたばかりの画像は、どの棚にも置いていなくても 1 分は残す")
+    func gracePeriod() {
+        let folder = URL(fileURLWithPath: "/tmp/Pinshelf/Clipboard")
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let onShelf = (url: folder.appending(path: "a.png"), modified: now.addingTimeInterval(-3600))
+        let old = (url: folder.appending(path: "b.png"), modified: now.addingTimeInterval(-61))
+        let fresh = (url: folder.appending(path: "c.png"), modified: now.addingTimeInterval(-10))
+        let result = ClipboardFiles.removable([onShelf, old, fresh], referencedPaths: [onShelf.url.path], now: now)
+        #expect(result == [old.url])
+    }
+
     @Test("ショートカットの表示")
     func shortcutSymbols() {
         #expect(ClipboardShortcut.optionShiftV.symbol == "⌥⇧V")

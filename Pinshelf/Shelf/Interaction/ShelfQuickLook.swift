@@ -16,6 +16,33 @@ final class ShelfPreviewSource: NSObject, QLPreviewPanelDataSource, QLPreviewPan
     /// テキストを見せるために書き出した一時ファイル
     private var textFiles: [ShelfItem.ID: URL] = [:]
 
+    /// テキストを見せるための一時ファイルを置くフォルダ
+    private static var temporaryFolder: URL {
+        FileManager.default.temporaryDirectory.appending(path: "Pinshelf-QuickLook", directoryHint: .isDirectory)
+    }
+
+    /// 一時ファイルをすべて消す（起動したとき・終了するとき）
+    static func removeTemporaryFiles() {
+        try? FileManager.default.removeItem(at: temporaryFolder)
+    }
+
+    /// この棚の一時ファイルを消す（棚を閉じたとき）
+    func removeTextFiles() {
+        for url in textFiles.values {
+            try? FileManager.default.removeItem(at: url)
+        }
+        textFiles.removeAll()
+    }
+
+    /// 棚から外したテキストの一時ファイルを消す（見せ直すときは、また書き出す）
+    private func pruneTextFiles() {
+        let present = Set(model?.items.map(\.id) ?? [])
+        for (id, url) in textFiles where !present.contains(id) {
+            try? FileManager.default.removeItem(at: url)
+            textFiles[id] = nil
+        }
+    }
+
     init(model: ShelfModel, panel: ShelfPanel) {
         self.model = model
         self.panel = panel
@@ -65,6 +92,7 @@ final class ShelfPreviewSource: NSObject, QLPreviewPanelDataSource, QLPreviewPan
 
     /// 選んでいるものが変わったら、見せている中身を合わせる
     func selectionChanged() {
+        pruneTextFiles()
         guard isShowing else { return }
         refreshItems()
         if items.isEmpty {
@@ -127,6 +155,7 @@ final class ShelfPreviewSource: NSObject, QLPreviewPanelDataSource, QLPreviewPan
     // MARK: - 見せるもの
 
     private func refreshItems() {
+        pruneTextFiles()
         guard let model else {
             items = []
             return
@@ -147,7 +176,7 @@ final class ShelfPreviewSource: NSObject, QLPreviewPanelDataSource, QLPreviewPan
     /// テキストを Quick Look で見せるための一時ファイル
     private func textFile(for id: ShelfItem.ID, text: String) -> URL? {
         if let url = textFiles[id] { return url }
-        let directory = FileManager.default.temporaryDirectory.appending(path: "Pinshelf-QuickLook", directoryHint: .isDirectory)
+        let directory = Self.temporaryFolder
         let url = directory.appending(path: "\(id.uuidString).txt")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

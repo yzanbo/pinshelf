@@ -52,11 +52,20 @@ enum ClipboardImporter {
         }
     }
 
-    /// どの棚にも置いていない画像を片付ける（起動したときに呼ぶ）
-    static func cleanUp(keeping referencedPaths: Set<String>) {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return }
-        for url in ClipboardFiles.unreferenced(files, referencedPaths: referencedPaths) {
+    /// どの棚にも置いていない画像を、完全に消す（ゴミ箱には入れない。入れたばかりの画像は、1 分は残す）
+    /// - Returns: どの棚にも置いていないのに、入れたばかりなので残した画像があるか（あれば、あとでもう一度片付ける）
+    @discardableResult
+    static func cleanUp(keeping referencedPaths: Set<String>, now: Date = .now) -> Bool {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return false }
+        let dated = files.map { url in
+            (url: url, modified: (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+        }
+        let removable = ClipboardFiles.removable(dated, referencedPaths: referencedPaths, now: now)
+        for url in removable {
             try? FileManager.default.removeItem(at: url)
         }
+        return ClipboardFiles.unreferenced(files, referencedPaths: referencedPaths).count > removable.count
     }
 }

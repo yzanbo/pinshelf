@@ -31,6 +31,8 @@ final class AppCoordinator {
     var clipboardHotKey: HotKey?
     var registeredClipboardShortcut: ClipboardShortcut?
     private var defaultsObserver: (any NSObjectProtocol)?
+    /// クリップボードから入れた画像の片付け（棚が変わったら、少し待ってから行う）
+    private var clipboardCleanUp: Task<Void, Never>?
 
     /// 今のドラッグで使っている設定（ドラッグを始めたときに読み直す）
     var settings = TriggerSettings.defaults
@@ -61,6 +63,8 @@ final class AppCoordinator {
         }
         restoreShelves()
         cleanUpClipboardFiles()
+        // 前に起動したときの、Quick Look 用の一時ファイルを消す
+        ShelfPreviewSource.removeTemporaryFiles()
         updateClipboardHotKey()
         // 設定でショートカットを変えたら、登録し直す
         defaultsObserver = NotificationCenter.default.addObserver(
@@ -94,6 +98,7 @@ final class AppCoordinator {
     func stop() {
         dragMonitor.stop()
         persistence.saveNow()
+        ShelfPreviewSource.removeTemporaryFiles()
     }
 
     // MARK: - 棚
@@ -148,6 +153,20 @@ final class AppCoordinator {
     func shelvesDidChange() {
         persistence.scheduleSave()
         favoritesList.reload()
+        scheduleClipboardCleanUp()
+    }
+
+    /// クリップボードから入れた画像のうち、使わなくなったものを片付ける（続けて変わったら、最後の 1 回だけ）。
+    /// 入れたばかりなので残した画像があれば、残す期間が過ぎたころにもう一度片付ける
+    private func scheduleClipboardCleanUp(after delay: Duration = .seconds(2)) {
+        clipboardCleanUp?.cancel()
+        clipboardCleanUp = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            if self.cleanUpClipboardFiles() {
+                self.scheduleClipboardCleanUp(after: .seconds(ClipboardFiles.gracePeriod + 5))
+            }
+        }
     }
 
     /// 画面端の帯が使っている縦の範囲（しまった棚の帯を、重ならないように置くため）

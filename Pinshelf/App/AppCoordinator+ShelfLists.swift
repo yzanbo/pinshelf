@@ -51,13 +51,13 @@ extension AppCoordinator {
             // ファイルがすべて見つからず、戻せなかった
             NSSound.beep()
         }
-        persistence.scheduleSave()
+        shelvesDidChange()
     }
 
     /// 最近閉じた棚をすべて忘れる
     func clearRecentShelves() {
         recentShelves.clear()
-        persistence.scheduleSave()
+        shelvesDidChange()
     }
 
     // MARK: - お気に入りの棚
