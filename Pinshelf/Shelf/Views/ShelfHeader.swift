@@ -1,7 +1,7 @@
 import PinshelfCore
 import SwiftUI
 
-/// 棚の見出し: 閉じる・しまうのボタン、名前（なければ件数）、元に戻す・メニュー・ピン・帯にたたむボタン
+/// 棚の見出し: 閉じる・しまう・お気に入りの ★ のボタン、名前（なければ件数）、元に戻す・メニュー・ピン・帯にたたむボタン
 ///
 /// 上の帯をつかんで棚を動かせる。ダブルクリックでしまう・浮かせる。名前を変えるときは、ここで入力する。
 struct ShelfHeader: View {
@@ -13,6 +13,11 @@ struct ShelfHeader: View {
     /// 左右のボタン欄の幅（名前を、ボタンにかからないように置くため）
     @State private var leadingButtonsWidth: CGFloat = 0
     @State private var trailingButtonsWidth: CGFloat = 0
+    /// 見出しの幅（左右のボタンのあいだに、名前を置く場所があるかを見るため）
+    @State private var headerWidth: CGFloat = 0
+
+    /// 名前（なければ件数）を出す、いちばん狭い場所の幅。これより狭ければ、名前を出さない（ボタンに重ねないため）
+    private static let minimumTitleWidth: CGFloat = 16
 
     var body: some View {
         // 左右のボタン欄は中身の幅だけにする（決まった幅で取ると、狭い棚で名前の欄が足りなくなる）
@@ -33,6 +38,8 @@ struct ShelfHeader: View {
                 }
                 .buttonStyle(.borderless)
                 .help(state.isDocked ? "浮かせる（見出しをつかんで真ん中へ運ぶ・ダブルクリックでも）" : "画面の端にしまう（画面の端まで運ぶ・見出しのダブルクリックでも）")
+
+                favoriteButton
             }
             .fixedSize()
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { leadingButtonsWidth = $0 }
@@ -75,11 +82,12 @@ struct ShelfHeader: View {
             .fixedSize()
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingButtonsWidth = $0 }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
         // 名前（なければ件数）は 1 行で置く（折り返さない）
         .overlay {
             if state.isRenaming {
                 titleBetweenButtons
-            } else {
+            } else if titleRoom >= Self.minimumTitleWidth {
                 ViewThatFits(in: .horizontal) {
                     // 入るなら、棚の真ん中に置く（左右のボタンの広いほうの幅だけよける）
                     title
@@ -103,6 +111,11 @@ struct ShelfHeader: View {
         .contextMenu { ShelfMenu(state: state, actions: actions) }
     }
 
+    /// 左右のボタンのあいだの、名前を置ける幅（狭い画面の端の棚に元に戻すボタンが出ると、ほとんど残らない）
+    private var titleRoom: CGFloat {
+        headerWidth - leadingButtonsWidth - trailingButtonsWidth - 12
+    }
+
     /// 左右のボタンのあいだに置いた名前
     private var titleBetweenButtons: some View {
         title
@@ -110,7 +123,7 @@ struct ShelfHeader: View {
             .padding(.trailing, trailingButtonsWidth + 6)
     }
 
-    /// 名前（なければ件数）・色の点・★の印。名前を変えるときは、ここで入力する
+    /// 名前（なければ件数）・色の点。名前を変えるときは、ここで入力する
     @ViewBuilder
     private var title: some View {
         if state.isRenaming {
@@ -147,19 +160,33 @@ struct ShelfHeader: View {
                         .foregroundStyle(.secondary)
                         .fixedSize()
                 } else {
-                    Text(model.countLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                if state.isFavorite {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.yellow)
-                        .help("お気に入り（閉じても残ります）")
+                    // 「1 個」が入らない狭い棚では、数だけにする（「…」で件数が消えないように）
+                    ViewThatFits(in: .horizontal) {
+                        Text(model.countLabel)
+                        Text("\(model.items.count)")
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
             }
         }
+    }
+
+    /// お気に入りの ★。いつも出して、お気に入りかどうかがすぐ分かるようにする。押すと、お気に入りにする・外す
+    private var favoriteButton: some View {
+        Button(action: actions.toggleFavorite) {
+            Image(systemName: state.isFavorite ? "star.fill" : "star")
+                .font(.system(size: 11))
+                .foregroundStyle(state.isFavorite ? Color.yellow : Color.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(state.isFavorite
+            ? "お気に入り（閉じても中身ごと残ります）。押すと、お気に入りから外します"
+            : "お気に入りにする（閉じても中身ごと残り、メニューバーから出し直せます）")
+        .accessibilityLabel(state.isFavorite ? "お気に入りから外す" : "お気に入りにする")
     }
 }
 
