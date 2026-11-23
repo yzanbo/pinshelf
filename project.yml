@@ -56,8 +56,8 @@ targets:
           - ja
         # アプリの版（make dist・make publish もここから読む）。1.0.0 より前は β 版（設定画面にも「β 版」と出る）。
         # 出すたびに上げる。CFBundleVersion（ビルド番号）も 1 つずつ上げる
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
         LSApplicationCategoryType: public.app-category.productivity
         # メニューバーに常駐し、Dock には出さない
         LSUIElement: true
