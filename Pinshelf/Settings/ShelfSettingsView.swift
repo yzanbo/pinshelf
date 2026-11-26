@@ -1,7 +1,7 @@
 import PinshelfCore
 import SwiftUI
 
-/// 「棚」のタブ: 新しく開く棚の大きさ・画面の端にしまう動き
+/// 「棚」のタブ: 新しく開く棚の大きさ・画面の端にしまう動き・空になった棚
 struct ShelfSettingsView: View {
     @AppStorage(ShelfBehaviorSettings.Key.remembersResizedSize)
     private var remembersResizedSize = ShelfBehaviorSettings.defaults.remembersResizedSize
@@ -9,6 +9,10 @@ struct ShelfSettingsView: View {
     private var docksWhenDraggedToEdge = ShelfBehaviorSettings.defaults.docksWhenDraggedToEdge
     @AppStorage(ShelfBehaviorSettings.Key.foldsNewShelves)
     private var foldsNewShelves = ShelfBehaviorSettings.defaults.foldsNewShelves
+    @AppStorage(ShelfBehaviorSettings.Key.closesEmptyDockedShelves)
+    private var closesEmptyDockedShelves = ShelfBehaviorSettings.defaults.closesEmptyDockedShelves
+    @AppStorage(ShelfBehaviorSettings.Key.closesEmptyFloatingShelves)
+    private var closesEmptyFloatingShelves = ShelfBehaviorSettings.defaults.closesEmptyFloatingShelves
 
     var body: some View {
         SettingsPane {
@@ -60,6 +64,25 @@ struct ShelfSettingsView: View {
                 Text("画面の端にしまう")
             } footer: {
                 SettingsNote("棚の … メニューの「すべての棚」からも切り替えられます。")
+            }
+
+            Section {
+                Toggle(isOn: $closesEmptyDockedShelves) {
+                    SettingTitle(
+                        "画面の端の棚が空になったら、閉じる",
+                        info: "中身を取り出したり外したりして 0 個になったら、画面の端の棚を閉じます。見出しのピンで開いたままにしている棚も閉じます。オフにすると、件数 0 の帯（開いたままの棚は、空の棚）のまま残します。"
+                    )
+                }
+                Toggle(isOn: $closesEmptyFloatingShelves) {
+                    SettingTitle(
+                        "浮いた棚が空になったら、閉じる",
+                        info: "中身を取り出したり外したりして 0 個になったら、浮いた棚（振る・キー・メニューで開く棚）を閉じます。オフにすると、空の棚のまま残します。"
+                    )
+                }
+            } header: {
+                Text("空になった棚")
+            } footer: {
+                SettingsNote("ポインタが棚の上にあるうちは閉じず、離れたら閉じます（そのあいだは ⌘Z で戻せます）。お気に入りの棚は、空になっても残します。ドラッグで出た棚に何も置かなかったときは、この設定にかかわらず閉じます。")
             }
         }
     }

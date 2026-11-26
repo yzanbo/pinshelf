@@ -173,7 +173,7 @@ struct DragOutRuleTests {
 
 @Suite("棚のふるまいの設定")
 struct ShelfBehaviorSettingsTests {
-    @Test("保存がなければ初期値（取り出しても外さない・スタックにまとめる・除外なし）")
+    @Test("保存がなければ初期値（取り出しても外さない・スタックにまとめる・除外なし・空になった棚は閉じる）")
     func defaults() {
         let settings = ShelfBehaviorSettings(reading: { _ in nil })
         #expect(settings == .defaults)
@@ -185,6 +185,8 @@ struct ShelfBehaviorSettingsTests {
         #expect(settings.foldsNewShelves)
         #expect(settings.docksWhenDraggedToEdge)
         #expect(settings.remembersResizedSize)
+        #expect(settings.closesEmptyDockedShelves)
+        #expect(settings.closesEmptyFloatingShelves)
     }
 
     @Test("保存した値を読み、型の違う値は初期値にする")
@@ -198,6 +200,8 @@ struct ShelfBehaviorSettingsTests {
             ShelfBehaviorSettings.Key.foldsNewShelves: false,
             ShelfBehaviorSettings.Key.docksWhenDraggedToEdge: false,
             ShelfBehaviorSettings.Key.remembersResizedSize: false,
+            ShelfBehaviorSettings.Key.closesEmptyDockedShelves: false,
+            ShelfBehaviorSettings.Key.closesEmptyFloatingShelves: "broken",
         ]
         let settings = ShelfBehaviorSettings(reading: { stored[$0] })
         #expect(settings.removesCopiedItems)
@@ -208,6 +212,18 @@ struct ShelfBehaviorSettingsTests {
         #expect(!settings.foldsNewShelves)
         #expect(!settings.docksWhenDraggedToEdge)
         #expect(!settings.remembersResizedSize)
+        #expect(!settings.closesEmptyDockedShelves)
+        #expect(settings.closesEmptyFloatingShelves)
+    }
+
+    @Test("空になった棚を閉じるかは、画面の端にある棚と浮いた棚で別々に決める")
+    func closesEmptyShelfByPlacement() {
+        let settings = ShelfBehaviorSettings(closesEmptyDockedShelves: false, closesEmptyFloatingShelves: true)
+        #expect(!settings.closesEmptyShelf(docked: true))
+        #expect(settings.closesEmptyShelf(docked: false))
+        let flipped = ShelfBehaviorSettings(closesEmptyDockedShelves: true, closesEmptyFloatingShelves: false)
+        #expect(flipped.closesEmptyShelf(docked: true))
+        #expect(!flipped.closesEmptyShelf(docked: false))
     }
 }
 

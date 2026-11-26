@@ -21,6 +21,8 @@ public struct ShelfBehaviorSettings: Equatable, Sendable {
         public static let foldsNewShelves = "edgeShelfCollapsesOnLeave"
         public static let docksWhenDraggedToEdge = "docksWhenDraggedToEdge"
         public static let remembersResizedSize = "remembersResizedShelfSize"
+        public static let closesEmptyDockedShelves = "closesEmptyDockedShelves"
+        public static let closesEmptyFloatingShelves = "closesEmptyFloatingShelves"
     }
 
     /// 取り出したら（コピーでも）棚から外す。ロックしたものは残す
@@ -39,6 +41,10 @@ public struct ShelfBehaviorSettings: Equatable, Sendable {
     public var docksWhenDraggedToEdge: Bool
     /// 棚の大きさを変えたら、それを標準の大きさ（次に開く同じ種類の棚の大きさ）にするか
     public var remembersResizedSize: Bool
+    /// 画面の端にある棚が空（0 個）になったら閉じるか（false なら、件数 0 の帯・空の棚のまま残す）
+    public var closesEmptyDockedShelves: Bool
+    /// 浮いた棚が空（0 個）になったら閉じるか（false なら、空の棚のまま残す）
+    public var closesEmptyFloatingShelves: Bool
 
     public init(
         removesCopiedItems: Bool = false,
@@ -48,7 +54,9 @@ public struct ShelfBehaviorSettings: Equatable, Sendable {
         clipboardShortcut: ClipboardShortcut = .optionShiftV,
         foldsNewShelves: Bool = true,
         docksWhenDraggedToEdge: Bool = true,
-        remembersResizedSize: Bool = true
+        remembersResizedSize: Bool = true,
+        closesEmptyDockedShelves: Bool = true,
+        closesEmptyFloatingShelves: Bool = true
     ) {
         self.removesCopiedItems = removesCopiedItems
         self.stackMultipleDrops = stackMultipleDrops
@@ -58,6 +66,8 @@ public struct ShelfBehaviorSettings: Equatable, Sendable {
         self.foldsNewShelves = foldsNewShelves
         self.docksWhenDraggedToEdge = docksWhenDraggedToEdge
         self.remembersResizedSize = remembersResizedSize
+        self.closesEmptyDockedShelves = closesEmptyDockedShelves
+        self.closesEmptyFloatingShelves = closesEmptyFloatingShelves
     }
 
     /// 初期値
@@ -76,13 +86,20 @@ public struct ShelfBehaviorSettings: Equatable, Sendable {
                 .flatMap(ClipboardShortcut.init(rawValue:)) ?? base.clipboardShortcut,
             foldsNewShelves: value(Key.foldsNewShelves) as? Bool ?? base.foldsNewShelves,
             docksWhenDraggedToEdge: value(Key.docksWhenDraggedToEdge) as? Bool ?? base.docksWhenDraggedToEdge,
-            remembersResizedSize: value(Key.remembersResizedSize) as? Bool ?? base.remembersResizedSize
+            remembersResizedSize: value(Key.remembersResizedSize) as? Bool ?? base.remembersResizedSize,
+            closesEmptyDockedShelves: value(Key.closesEmptyDockedShelves) as? Bool ?? base.closesEmptyDockedShelves,
+            closesEmptyFloatingShelves: value(Key.closesEmptyFloatingShelves) as? Bool ?? base.closesEmptyFloatingShelves
         )
     }
 
     /// UserDefaults から設定を読む
     public init(defaults store: UserDefaults) {
         self.init(reading: { store.object(forKey: $0) })
+    }
+
+    /// 空（0 個）になった棚を閉じるか（docked: 画面の端にある棚か）
+    public func closesEmptyShelf(docked: Bool) -> Bool {
+        docked ? closesEmptyDockedShelves : closesEmptyFloatingShelves
     }
 }
 

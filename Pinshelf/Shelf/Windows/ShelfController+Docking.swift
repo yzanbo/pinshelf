@@ -128,9 +128,9 @@ extension ShelfController {
 
     /// 開いた棚を帯にたたむ（見出しの › ボタン・ポインタが離れたとき）
     ///
-    /// 空になった画面端の棚は、帯を残さずに閉じる（次のドラッグで、また端に出る）。
+    /// 空になった画面端の棚は、帯を残さずに閉じる（次のドラッグで、また端に出る。設定で残すようにもできる）。
     func foldOrClose() {
-        if isEmptyEdgeShelf {
+        if state.isEdgeShelf, closesWhenEmpty {
             close()
         } else {
             fold()
@@ -163,16 +163,21 @@ extension ShelfController {
             pointerWatcher.stop()
             return
         }
-        watchPointer(waitForEntry: waitForEntry, onLeave: { $0.foldOrClose() })
+        watchPointer(waitForEntry: waitForEntry, while: { $0.isOpenOnEdge }, onLeave: { $0.foldOrClose() })
     }
 
-    /// 開いた画面の端の棚から、ポインタが離れるのを見張る
+    /// 画面の端で開いているか（ドラッグで開いたのではない）
+    var isOpenOnEdge: Bool {
+        state.isDocked && state.isUnfolded && !isUnfoldedByDrag
+    }
+
+    /// 開いた棚から、ポインタが離れるのを見張る
     /// - Parameters:
-    ///   - condition: 画面の端で開いている（ドラッグで開いたのではない）ことに加えて、見張り続ける条件。false になったら見張りをやめる
+    ///   - condition: 見張り続ける条件。false になったら見張りをやめる
     ///   - onLeave: 離れたとき
-    private func watchPointer(
+    func watchPointer(
         waitForEntry: Bool = false,
-        while condition: @escaping (ShelfController) -> Bool = { _ in true },
+        while condition: @escaping (ShelfController) -> Bool,
         onLeave: @escaping (ShelfController) -> Void
     ) {
         pointerWatcher.start(
@@ -180,7 +185,7 @@ extension ShelfController {
             frame: { [weak self] in self?.panel.frame ?? .zero },
             isActive: { [weak self] in
                 guard let self else { return false }
-                return self.state.isDocked && self.state.isUnfolded && !self.isUnfoldedByDrag && condition(self)
+                return condition(self)
             },
             // Quick Look で見ている間・名前を入力している間・大きさを変えている間は、離れても何もしない
             defersFolding: { [weak self] in
@@ -242,28 +247,6 @@ extension ShelfController {
         guard state.isEdgeShelf else { return }
         state.isEdgeShelf = false
         onResignEdgeShelf?(self)
-    }
-
-    /// 空になったので、閉じてよい画面端の棚か（落としたものを読み込んでいる途中は、空に見えても閉じない。お気に入りの棚は、空でも残す）
-    var isEmptyEdgeShelf: Bool {
-        state.isEdgeShelf && model.isEmpty && model.isSettled && !state.isFavorite
-    }
-
-    /// 中身が変わった: 空になった画面端の棚は、件数 0 の帯や空の棚を残さずに閉じる
-    ///
-    /// ポインタが棚の上にあるうちは閉じず、離れたら閉じる（もう離れている・帯にたたんでいるなら、すぐに閉じる）。
-    /// 帯にたたむときの foldOrClose だけでは、次のときに閉じられないため:
-    /// - ほかのアプリへ取り出した: 棚から外れるのは、受け取る側が移し終えたあと（ポインタが離れて、帯にたたんだあと）になる
-    /// - 開いたままにしている: ポインタが離れても、帯にたたまない
-    func contentsDidChange() {
-        // 浮かせた・隠した棚は、画面端の棚でなくなるので、ここでは閉じない
-        guard isEmptyEdgeShelf, !isUnfoldedByDrag else { return }
-        if state.isUnfolded, panel.frame.contains(NSEvent.mouseLocation) {
-            // 離れる前に中身が戻ったら（⌘Z・落とした）、見張りをやめる
-            watchPointer(while: { $0.isEmptyEdgeShelf }, onLeave: { $0.close() })
-        } else {
-            close()
-        }
     }
 
     // MARK: - 利用者が運んだとき
