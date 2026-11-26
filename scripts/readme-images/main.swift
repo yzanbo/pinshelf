@@ -8,7 +8,8 @@
 //   - hero.png: 全体の見本（画面の端の棚・帯・浮いた棚・メニューバーのアイコン）
 //   - edge.gif: ファイルをドラッグし始める → 画面の端に帯が出る → 近づくと開く → 落とす → 離れると帯にたたむ
 //   - shake.gif: ファイルをドラッグしながら振る → カーソルの位置に棚が出る → 落とす
-//   - favorites.png: 見出しの ★ でお気に入りにした棚と、お気に入り一覧のウィンドウ
+//   - drag-out.gif: 棚の中身をほかのウィンドウへドラッグする → 移したものは棚から外れる
+//   - favorites.gif: 見出しの ☆ を押してお気に入りにする → ✕ で閉じる → お気に入り一覧から出し直す
 import AppKit
 import PinshelfCore
 import SwiftUI
@@ -22,11 +23,13 @@ let renderScale: CGFloat = 2
 /// 画像を作れなかったわけ
 enum ReadmeImagesError: Error, CustomStringConvertible {
     case captureFailed
+    case itemNotFound(String)
     case writeFailed(String)
 
     var description: String {
         switch self {
         case .captureFailed: "Could not capture the window contents"
+        case .itemNotFound(let name): "Could not find \(name) on the shelf"
         case .writeFailed(let name): "Could not write \(name)"
         }
     }
@@ -72,14 +75,52 @@ func makeBitmapContext(width: Int, height: Int) -> CGContext? {
 
 /// 写した棚（画像は renderScale 倍。frame は写したときのウィンドウの枠）
 struct ShelfShot {
+    /// 見出しのボタン
+    enum HeaderButton {
+        case close
+        case favorite
+
+        /// 棚の左上からの、ボタンの真ん中のずれ（見出しの左のボタンの並びは、棚の幅で変わらない）
+        var offset: CGPoint {
+            switch self {
+            case .close: CGPoint(x: 19, y: 19)
+            case .favorite: CGPoint(x: 63, y: 19)
+            }
+        }
+    }
+
     let image: CGImage
     let frame: CGRect
+    /// 中身のファイルのアイコンの真ん中（ファイル名ごと。棚の左上からのずれ）
+    let iconCenters: [String: CGPoint]
+
+    /// origin に置いたときの、ファイルのアイコンの真ん中（キャンバスの座標）
+    func iconCenter(of file: URL, placedAt origin: CGPoint) throws -> CGPoint {
+        guard let center = iconCenters[file.lastPathComponent] else { throw ReadmeImagesError.itemNotFound(file.lastPathComponent) }
+        return point(at: center, placedAt: origin)
+    }
+
+    /// origin に置いたときの、見出しのボタンの真ん中（キャンバスの座標）
+    func center(of button: HeaderButton, placedAt origin: CGPoint) -> CGPoint {
+        point(at: button.offset, placedAt: origin)
+    }
+
+    /// 棚の左上からのずれを、キャンバスの座標（原点は左下）にする
+    private func point(at offset: CGPoint, placedAt origin: CGPoint) -> CGPoint {
+        CGPoint(x: origin.x + offset.x, y: origin.y + frame.height - offset.y)
+    }
 }
 
 /// 棚のウィンドウの中身を、レイヤーごと描き写す（ウィンドウの影は写らないので、並べるときに描く）
 func capture(_ shelf: ShelfController) throws -> ShelfShot {
     guard let view = shelf.panel.contentView else { throw ReadmeImagesError.captureFailed }
-    return ShelfShot(image: try capture(view), frame: shelf.panel.frame)
+    // アイコンの真ん中は、棚から取り出すときと同じく、並べた枠から求める
+    var iconCenters: [String: CGPoint] = [:]
+    for item in shelf.model.items {
+        guard case .file(let url) = item.content, let tile = shelf.model.tileFrames[item.id] else { continue }
+        iconCenters[url.lastPathComponent] = CGPoint(x: tile.midX, y: tile.minY + 26)
+    }
+    return ShelfShot(image: try capture(view), frame: shelf.panel.frame, iconCenters: iconCenters)
 }
 
 /// ビューを、レイヤーごと描き写す（renderScale 倍の画素）
@@ -117,6 +158,16 @@ func lerp(_ a: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint {
     CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
 }
 
+/// ゆっくり動き出して、ゆっくり止まる進み具合（カーソルを人が動かしたように見せる）
+func smooth(_ t: CGFloat) -> CGFloat {
+    t * t * (3 - 2 * t)
+}
+
+/// steps コマで a から b へ動かす、各コマの点（最後のコマで b に着く）
+func path(from a: CGPoint, to b: CGPoint, steps: Int) -> [CGPoint] {
+    (1...steps).map { lerp(a, b, smooth(CGFloat($0) / CGFloat(steps))) }
+}
+
 /// 速さの変わり方（CAMediaTimingFunction の曲線）で、時間の割合 t（0〜1）のときの進み具合を求める
 func progress(_ function: CAMediaTimingFunction, at t: Double) -> Double {
     var p1: [Float] = [0, 0]
@@ -134,6 +185,29 @@ func progress(_ function: CAMediaTimingFunction, at t: Double) -> Double {
         if bezier(mid, p1[0], p2[0]) < t { low = mid } else { high = mid }
     }
     return bezier((low + high) / 2, p1[1], p2[1])
+}
+
+/// 浮いた棚の出入りの動き（アプリと同じ長さ・同じ速さの変わり方で、各コマの出ている具合（0〜1）を求める）
+enum FloatingShelfMotion {
+    /// 1 コマの長さ（秒）
+    static let frameDelay = 0.03
+
+    /// 出てくる間の、各コマの出ている具合
+    static func appearing() -> [CGFloat] {
+        let count = frameCount(for: ShelfMotion.duration)
+        return (1...count).map { CGFloat(progress(ShelfMotion.timingFunction, at: Double($0) / Double(count))) }
+    }
+
+    /// 消えていく間の、各コマの出ている具合（アプリと同じく、出るときより少し短く、だんだん速く消える）
+    static func disappearing() -> [CGFloat] {
+        let count = frameCount(for: ShelfMotion.duration * 0.8)
+        let easeIn = CAMediaTimingFunction(name: .easeIn)
+        return (1...count).map { 1 - CGFloat(progress(easeIn, at: Double($0) / Double(count))) }
+    }
+
+    private static func frameCount(for duration: TimeInterval) -> Int {
+        max(1, Int((duration / frameDelay).rounded()))
+    }
 }
 
 // MARK: - 描く
@@ -291,6 +365,21 @@ final class Canvas {
         context.restoreGState()
     }
 
+    /// 浮いた棚を、出てくる・消えていく途中の姿で置く（presence: 0 で消えている、1 で出ている。アプリと同じく、少し小さい状態から広がる）
+    func floatingShelf(_ shot: ShelfShot, at origin: CGPoint, presence: CGFloat) {
+        shelf(shot, at: origin, alpha: presence, scale: ShelfMotion.appearScale + (1 - ShelfMotion.appearScale) * presence)
+    }
+
+    /// クリックの印（カーソルの先の、薄い丸）
+    func click(at point: CGPoint) {
+        let rect = CGRect(x: point.x - 11, y: point.y - 11, width: 22, height: 22)
+        context.setFillColor(color(0x000000, 0.12))
+        context.fillEllipse(in: rect)
+        context.setStrokeColor(color(0x000000, 0.28))
+        context.setLineWidth(1.2)
+        context.strokeEllipse(in: rect)
+    }
+
     /// ドラッグしているファイル（少し透ける）
     func draggedFile(_ url: URL, at point: CGPoint) {
         withAppKit {
@@ -321,29 +410,47 @@ final class Canvas {
     }
 }
 
-/// ファイルの並んだウィンドウから、ファイルをドラッグする GIF のコマ（架空のデスクトップに、1 コマずつ描いて足す）
-final class DragScene {
-    static let size = CGSize(width: 640, height: 400)
-    let window = CGRect(x: 36, y: 96, width: 270, height: 230)
-    let files = [Sample.proposal, Sample.estimate, Sample.logo]
+/// GIF のコマを、1 コマずつ描いて足す（毎回、架空のデスクトップ・メニューバー・カーソルを描く）
+final class GIFScene {
+    /// edge.gif・shake.gif・drag-out.gif の大きさ
+    static let standardSize = CGSize(width: 640, height: 400)
+    /// GIF のメニューバーの高さ
+    static let menuBarHeight: CGFloat = 22
+
+    let size: CGSize
     private(set) var frames: [GIFFrame] = []
 
-    /// ドラッグするファイル（ウィンドウの 1 つ目）
-    var dragged: URL { files[0] }
+    init(size: CGSize = standardSize) {
+        self.size = size
+    }
 
-    /// ドラッグし始める位置（ドラッグするファイルの上）
-    var start: CGPoint { Canvas.fileCenter(in: window, index: 0) }
-
-    /// 1 コマを描いて足す（drawShelf で棚を描く。dragging なら、カーソルにドラッグしているファイルを付ける）
-    func addFrame(cursor: CGPoint, dragging: Bool, delay: Double, drawShelf: (Canvas) -> Void = { _ in }) {
-        let canvas = Canvas(size: Self.size)
+    /// 1 コマを描いて足す
+    /// - dragging: カーソルに付けて描く、ドラッグしているファイル
+    /// - clicking: カーソルの先にクリックの印を描く
+    /// - draw: デスクトップの上に描くもの（ウィンドウ・棚）
+    func addFrame(cursor: CGPoint, dragging: URL? = nil, clicking: Bool = false, delay: Double, draw: (Canvas) -> Void) {
+        let canvas = Canvas(size: size)
         canvas.wallpaper(gradient: false)
-        canvas.fileWindow(window, title: "書類", files: files)
-        drawShelf(canvas)
-        canvas.menuBar(height: 22)
-        if dragging { canvas.draggedFile(dragged, at: cursor) }
+        draw(canvas)
+        canvas.menuBar(height: Self.menuBarHeight)
+        if let dragging { canvas.draggedFile(dragging, at: cursor) }
+        if clicking { canvas.click(at: cursor) }
         canvas.cursor(at: cursor)
         frames.append((downscale(canvas.image(), by: Int(renderScale)), delay))
+    }
+}
+
+/// ファイルをドラッグし始める「書類」のウィンドウ（edge.gif・shake.gif）
+enum DocumentsWindow {
+    static let rect = CGRect(x: 36, y: 96, width: 270, height: 230)
+    static var files: [URL] { [Sample.proposal, Sample.estimate, Sample.logo] }
+    /// ドラッグするファイル
+    static var dragged: URL { Sample.proposal }
+    /// ドラッグし始める位置（ドラッグするファイルの上）
+    static var start: CGPoint { Canvas.fileCenter(in: rect, index: 0) }
+
+    static func draw(on canvas: Canvas) {
+        canvas.fileWindow(rect, title: "書類", files: files)
     }
 }
 
@@ -432,7 +539,8 @@ final class ReadmeImages {
         try await makeHero()
         try await makeEdgeGIF()
         try await makeShakeGIF()
-        try await makeFavorites()
+        try await makeDragOutGIF()
+        try await makeFavoritesGIF()
         for shelf in coordinator.shelves { shelf.discard() }
         try? FileManager.default.removeItem(at: sampleFolder)
     }
@@ -481,7 +589,6 @@ final class ReadmeImages {
 
     func makeEdgeGIF() async throws {
         let visible = screen.visibleFrame
-        let scene = DragScene()
 
         // 本物の棚で、帯 → 開く → 落とす → たたむ を写す
         let shelf = makeShelf(at: CGPoint(x: visible.maxX - 200, y: visible.midY), items: [])
@@ -491,7 +598,7 @@ final class ReadmeImages {
         shelf.unfold(byDrag: true)
         let unfolding = await record(shelf, for: .milliseconds(320))
         await settle()
-        shelf.model.accept(contents: [.file(scene.dragged)])
+        shelf.model.accept(contents: [.file(DocumentsWindow.dragged)])
         await settle()
         let filled = try capture(shelf)
         shelf.fold()
@@ -501,27 +608,30 @@ final class ReadmeImages {
         shelf.discard()
 
         // 架空のデスクトップの右端に、棚を置く
+        let scene = GIFScene()
         let shelfCenterY: CGFloat = 196
         /// 1 コマを描く（slide: 帯が画面の外から滑り込む進み具合（0〜1））
         func frame(cursor: CGPoint, shot: ShelfShot?, slide: CGFloat = 1, dragging: Bool, delay: Double) {
-            scene.addFrame(cursor: cursor, dragging: dragging, delay: delay) { canvas in
+            scene.addFrame(cursor: cursor, dragging: dragging ? DocumentsWindow.dragged : nil, delay: delay) { canvas in
+                DocumentsWindow.draw(on: canvas)
                 guard let shot else { return }
                 let origin = CGPoint(
-                    x: DragScene.size.width - shot.frame.width + ShelfMotion.slideDistance * (1 - slide), y: shelfCenterY - shot.frame.height / 2
+                    x: scene.size.width - shot.frame.width + ShelfMotion.slideDistance * (1 - slide), y: shelfCenterY - shot.frame.height / 2
                 )
                 canvas.shelf(shot, at: origin, alpha: slide)
             }
         }
 
         // 1. ファイルの上にカーソル
-        frame(cursor: scene.start, shot: nil, dragging: false, delay: 0.8)
+        let start = DocumentsWindow.start
+        frame(cursor: start, shot: nil, dragging: false, delay: 0.8)
         // 2. ドラッグし始めると、画面の端に帯が滑り込む
         let approach = CGPoint(x: 470, y: shelfCenterY + 10)
         for step in 1...12 {
-            frame(cursor: lerp(scene.start, approach, CGFloat(step) / 12), shot: tab, slide: min(1, CGFloat(step) / 5), dragging: true, delay: 0.05)
+            frame(cursor: lerp(start, approach, CGFloat(step) / 12), shot: tab, slide: min(1, CGFloat(step) / 5), dragging: true, delay: 0.05)
         }
         // 3. 帯に近づくと、棚が開く
-        let inside = CGPoint(x: DragScene.size.width - 70, y: shelfCenterY + 6)
+        let inside = CGPoint(x: scene.size.width - 70, y: shelfCenterY + 6)
         let unfoldFrames = Array(unfolding.prefix(12))
         for (index, shot) in unfoldFrames.enumerated() {
             frame(cursor: lerp(approach, inside, CGFloat(index + 1) / CGFloat(unfoldFrames.count)), shot: shot, dragging: true, delay: 0.04)
@@ -543,36 +653,37 @@ final class ReadmeImages {
 
     func makeShakeGIF() async throws {
         let visible = screen.visibleFrame
-        let scene = DragScene()
 
         // 本物の棚で、空の棚と、落としたあとの棚を写す
         let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [], size: CGSize(width: 220, height: 170))
         shelf.show()
         await settle()
         let empty = try capture(shelf)
-        shelf.model.accept(contents: [.file(scene.dragged)])
+        shelf.model.accept(contents: [.file(DocumentsWindow.dragged)])
         await settle()
         let filled = try capture(shelf)
         shelf.discard()
         await settle()
 
         // 振る場所（棚は、ここを真ん中にして出る）
+        let scene = GIFScene()
         let shakeCenter = CGPoint(x: 470, y: 214)
         /// 1 コマを描く（appear: 棚が出てくる動きの進み具合（0〜1））
         func frame(cursor: CGPoint, shot: ShelfShot?, appear: CGFloat = 1, dragging: Bool, delay: Double) {
-            scene.addFrame(cursor: cursor, dragging: dragging, delay: delay) { canvas in
+            scene.addFrame(cursor: cursor, dragging: dragging ? DocumentsWindow.dragged : nil, delay: delay) { canvas in
+                DocumentsWindow.draw(on: canvas)
                 guard let shot else { return }
-                // アプリと同じく、少し小さい状態からふわっと出す
                 let origin = CGPoint(x: shakeCenter.x - shot.frame.width / 2, y: shakeCenter.y - shot.frame.height / 2)
-                canvas.shelf(shot, at: origin, alpha: appear, scale: ShelfMotion.appearScale + (1 - ShelfMotion.appearScale) * appear)
+                canvas.floatingShelf(shot, at: origin, presence: appear)
             }
         }
 
         // 1. ファイルの上にカーソル
-        frame(cursor: scene.start, shot: nil, dragging: false, delay: 0.8)
+        let start = DocumentsWindow.start
+        frame(cursor: start, shot: nil, dragging: false, delay: 0.8)
         // 2. ドラッグして、何もないところへ運ぶ
         for step in 1...10 {
-            frame(cursor: lerp(scene.start, shakeCenter, CGFloat(step) / 10), shot: nil, dragging: true, delay: 0.05)
+            frame(cursor: lerp(start, shakeCenter, CGFloat(step) / 10), shot: nil, dragging: true, delay: 0.05)
         }
         // 3. 左右に軽く振る（折り返しの間を 2 コマで動かす）
         let swings: [CGFloat] = [0, 32, -32, 32, -32, 24, 0]
@@ -583,10 +694,8 @@ final class ReadmeImages {
             }
         }
         // 4. カーソルの位置に棚が出る（アプリと同じ長さ・同じ速さの変わり方）
-        let appearFrames = max(1, Int((ShelfMotion.duration / 0.03).rounded()))
-        for step in 1...appearFrames {
-            let t = progress(ShelfMotion.timingFunction, at: Double(step) / Double(appearFrames))
-            frame(cursor: shakeCenter, shot: empty, appear: CGFloat(t), dragging: true, delay: 0.03)
+        for presence in FloatingShelfMotion.appearing() {
+            frame(cursor: shakeCenter, shot: empty, appear: presence, dragging: true, delay: FloatingShelfMotion.frameDelay)
         }
         frame(cursor: shakeCenter, shot: empty, dragging: true, delay: 0.6)
         // 5. 落とすと、棚に入る（元のファイルは動かない）
@@ -601,52 +710,187 @@ final class ReadmeImages {
         try writeGIF(scene.frames, named: "shake.gif")
     }
 
-    // MARK: favorites.png
+    // MARK: drag-out.gif
 
-    func makeFavorites() async throws {
+    func makeDragOutGIF() async throws {
         let visible = screen.visibleFrame
+        let dragged = Sample.proposal
 
-        // 見出しの ★ でお気に入りにした棚
-        let shelf = makeShelf(
-            at: CGPoint(x: visible.midX - 220, y: visible.midY), items: [Sample.photo, Sample.memo],
-            size: CGSize(width: 250, height: 190), name: "あとで送る", color: .orange, favorite: true
-        )
+        // 本物の棚で、取り出す前と、取り出して外れたあとを写す
+        let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [dragged, Sample.estimate], size: CGSize(width: 240, height: 190))
         shelf.show()
-        // お気に入り一覧（アプリと同じ画面に、見本の棚を並べる）
-        let listWindow = makeFavoritesWindow(entries: [
-            FavoriteShelfEntry(id: shelf.id, title: "あとで送る", color: .orange, count: 2, isVisible: true),
-            FavoriteShelfEntry(id: UUID(), title: "デザイン素材", color: .purple, count: 8, isVisible: false),
-            FavoriteShelfEntry(id: UUID(), title: "請求書の控え", color: .green, count: 3, isVisible: false),
-        ], centeredAt: CGPoint(x: visible.midX + 190, y: visible.midY))
         await settle()
-
-        let shelfShot = try capture(shelf)
-        guard let listView = listWindow.contentView else { throw ReadmeImagesError.captureFailed }
-        let listShot = try capture(listView)
-        let listSize = listView.bounds.size
-        listWindow.orderOut(nil)
+        let full = try capture(shelf)
+        // 同じディスクの Finder に落とすと移動になり、元の場所からなくなるので、棚から外れる
+        let moved = shelf.model.items.filter { $0.content == .file(dragged) }.map(\.id)
+        guard !moved.isEmpty else { throw ReadmeImagesError.itemNotFound(dragged.lastPathComponent) }
+        shelf.model.removeItems(withIDs: Set(moved))
+        await settle()
+        let taken = try capture(shelf)
         shelf.discard()
         await settle()
 
-        let canvas = Canvas(size: CGSize(width: 800, height: 340))
-        canvas.wallpaper(gradient: true)
-        // メニューバーの下の真ん中に、棚と一覧の高さをそろえて並べる
-        let middle = (canvas.size.height - Canvas.menuBarHeight) / 2
-        let shelfOrigin = CGPoint(x: 70, y: middle - shelfShot.frame.height / 2)
-        canvas.shelf(shelfShot, at: shelfOrigin)
-        let windowHeight = listSize.height + Canvas.titleBarHeight
-        canvas.window(CGRect(x: 400, y: middle - windowHeight / 2, width: listSize.width, height: windowHeight), title: "お気に入り一覧", content: listShot)
-        // 見出しの ★ を指す（★ が隠れないよう、少し右下に）
-        canvas.cursor(at: CGPoint(x: shelfOrigin.x + 72, y: shelfOrigin.y + shelfShot.frame.height - 27))
-        canvas.menuBar()
-        try writePNG(canvas.image(), named: "favorites.png")
+        // 左に棚、右に落とす先のフォルダのウィンドウを置く
+        let scene = GIFScene()
+        let shelfOrigin = CGPoint(x: 44, y: 116)
+        let folder = CGRect(x: 334, y: 96, width: 270, height: 230)
+        /// 1 コマを描く（dropped: フォルダに移ったあとか）
+        func frame(cursor: CGPoint, dropped: Bool, dragging: Bool, delay: Double) {
+            scene.addFrame(cursor: cursor, dragging: dragging ? dragged : nil, delay: delay) { canvas in
+                canvas.fileWindow(folder, title: "提出用", files: dropped ? [dragged] : [])
+                canvas.shelf(dropped ? taken : full, at: shelfOrigin)
+            }
+        }
+
+        // 1. 棚の中身の上にカーソル
+        let start = try full.iconCenter(of: dragged, placedAt: shelfOrigin)
+        frame(cursor: start, dropped: false, dragging: false, delay: 0.8)
+        // 2. ほかのウィンドウへドラッグする
+        let drop = Canvas.fileCenter(in: folder, index: 0)
+        for point in path(from: start, to: drop, steps: 14) {
+            frame(cursor: point, dropped: false, dragging: true, delay: 0.045)
+        }
+        frame(cursor: drop, dropped: false, dragging: true, delay: 0.3)
+        // 3. 落とすと、フォルダに移り、棚から外れる
+        frame(cursor: drop, dropped: true, dragging: false, delay: 0.6)
+        // 4. カーソルを離す
+        let away = CGPoint(x: drop.x + 30, y: 70)
+        for point in path(from: drop, to: away, steps: 6) {
+            frame(cursor: point, dropped: true, dragging: false, delay: 0.04)
+        }
+        frame(cursor: away, dropped: true, dragging: false, delay: 1.6)
+
+        try writeGIF(scene.frames, named: "drag-out.gif")
     }
 
-    /// お気に入り一覧のウィンドウを、entries を並べて出す（アプリの FavoritesWindowController と同じ作り）
-    func makeFavoritesWindow(entries: [FavoriteShelfEntry], centeredAt center: CGPoint) -> NSWindow {
+    // MARK: favorites.gif
+
+    /// favorites.gif に使う、棚と一覧の写し
+    struct FavoritesShots {
+        /// まだお気に入りではない棚（☆）
+        let plain: ShelfShot
+        /// お気に入りにした棚（★）
+        let favorite: ShelfShot
+        /// お気に入りにする前の一覧
+        let listBefore: CGImage
+        /// 棚を出しているときの一覧（「前に出す」）
+        let listShown: CGImage
+        /// 棚を閉じているときの一覧（「出す」）
+        let listHidden: CGImage
+        /// 一覧の中身の大きさ
+        let listSize: CGSize
+    }
+
+    /// 本物の棚とお気に入り一覧を出して、お気に入りにする前・したあと・閉じたあとを写す
+    func captureFavoritesShots() async throws -> FavoritesShots {
+        let visible = screen.visibleFrame
+        let shelf = makeShelf(
+            at: CGPoint(x: visible.midX - 220, y: visible.midY), items: [Sample.photo, Sample.memo],
+            size: CGSize(width: 250, height: 190), name: "あとで送る", color: .orange
+        )
+        shelf.show()
         let list = FavoriteShelvesList()
-        list.load = { entries }
-        list.reload()
+        let listWindow = makeFavoritesWindow(list: list, centeredAt: CGPoint(x: visible.midX + 190, y: visible.midY))
+        defer {
+            listWindow.orderOut(nil)
+            shelf.discard()
+        }
+        guard let listView = listWindow.contentView else { throw ReadmeImagesError.captureFailed }
+        /// 一覧に entries を並べて写す
+        func captureList(_ entries: [FavoriteShelfEntry]) async throws -> CGImage {
+            list.load = { entries }
+            list.reload()
+            await settle()
+            return try capture(listView)
+        }
+        // ほかのお気に入りの棚（閉じている）と、この棚
+        let others = [
+            FavoriteShelfEntry(id: UUID(), title: "デザイン素材", color: .purple, count: 8, isVisible: false),
+            FavoriteShelfEntry(id: UUID(), title: "請求書の控え", color: .green, count: 3, isVisible: false),
+        ]
+        func entry(isVisible: Bool) -> FavoriteShelfEntry {
+            FavoriteShelfEntry(id: shelf.id, title: "あとで送る", color: .orange, count: 2, isVisible: isVisible)
+        }
+
+        await settle()
+        let plain = try capture(shelf)
+        let listBefore = try await captureList(others)
+        shelf.setFavorite(true)
+        await settle()
+        return FavoritesShots(
+            plain: plain,
+            favorite: try capture(shelf),
+            listBefore: listBefore,
+            listShown: try await captureList(others + [entry(isVisible: true)]),
+            listHidden: try await captureList(others + [entry(isVisible: false)]),
+            listSize: listView.bounds.size
+        )
+    }
+
+    func makeFavoritesGIF() async throws {
+        let shots = try await captureFavoritesShots()
+        await settle()
+
+        // メニューバーの下の真ん中に、棚と一覧の高さをそろえて並べる
+        let scene = GIFScene(size: CGSize(width: 800, height: 340))
+        let middle = (scene.size.height - GIFScene.menuBarHeight) / 2
+        let shelfOrigin = CGPoint(x: 70, y: middle - shots.plain.frame.height / 2)
+        let windowHeight = shots.listSize.height + Canvas.titleBarHeight
+        let windowRect = CGRect(x: 400, y: middle - windowHeight / 2, width: shots.listSize.width, height: windowHeight)
+        /// 1 コマを描く（shot: 棚、presence: 棚の出ている具合（0〜1）、list: 一覧の中身）
+        func frame(cursor: CGPoint, shot: ShelfShot?, presence: CGFloat = 1, list: CGImage, clicking: Bool = false, delay: Double) {
+            scene.addFrame(cursor: cursor, clicking: clicking, delay: delay) { canvas in
+                if let shot { canvas.floatingShelf(shot, at: shelfOrigin, presence: presence) }
+                canvas.window(windowRect, title: "お気に入り一覧", content: list)
+            }
+        }
+
+        let rest = CGPoint(x: shelfOrigin.x + 160, y: shelfOrigin.y + 50)
+        let star = shots.plain.center(of: .favorite, placedAt: shelfOrigin)
+        let close = shots.plain.center(of: .close, placedAt: shelfOrigin)
+        // 一覧の 3 行目（あとで送る）の「出す」ボタン（一覧の行は、上の余白 31pt から 42pt おきに並ぶ）
+        let showButton = CGPoint(x: windowRect.maxX - 36, y: windowRect.maxY - Canvas.titleBarHeight - 31 - 42 * 2)
+
+        // 1. まだお気に入りではない棚（☆）と、お気に入り一覧
+        frame(cursor: rest, shot: shots.plain, list: shots.listBefore, delay: 0.8)
+        // 2. 見出しの ☆ を押すと ★ になり、一覧に入る。押したら、★ が見えるようにカーソルを少しずらす
+        for point in path(from: rest, to: star, steps: 9) {
+            frame(cursor: point, shot: shots.plain, list: shots.listBefore, delay: 0.04)
+        }
+        frame(cursor: star, shot: shots.plain, list: shots.listBefore, clicking: true, delay: 0.15)
+        let starAside = CGPoint(x: star.x + 12, y: star.y - 24)
+        for point in path(from: star, to: starAside, steps: 4) {
+            frame(cursor: point, shot: shots.favorite, list: shots.listShown, delay: 0.04)
+        }
+        frame(cursor: starAside, shot: shots.favorite, list: shots.listShown, delay: 1.0)
+        // 3. ✕ で閉じても、お気に入りの棚は一覧に残る（閉じている）
+        for point in path(from: starAside, to: close, steps: 6) {
+            frame(cursor: point, shot: shots.favorite, list: shots.listShown, delay: 0.04)
+        }
+        frame(cursor: close, shot: shots.favorite, list: shots.listShown, clicking: true, delay: 0.15)
+        for presence in FloatingShelfMotion.disappearing() {
+            frame(cursor: close, shot: shots.favorite, presence: presence, list: shots.listHidden, delay: FloatingShelfMotion.frameDelay)
+        }
+        frame(cursor: close, shot: nil, list: shots.listHidden, delay: 0.9)
+        // 4. 一覧の「出す」で、閉じたときの場所に出し直す。「前に出す」に変わったのが見えるように、カーソルを少しずらす
+        for point in path(from: close, to: showButton, steps: 14) {
+            frame(cursor: point, shot: nil, list: shots.listHidden, delay: 0.04)
+        }
+        frame(cursor: showButton, shot: nil, list: shots.listHidden, clicking: true, delay: 0.15)
+        for presence in FloatingShelfMotion.appearing() {
+            frame(cursor: showButton, shot: shots.favorite, presence: presence, list: shots.listShown, delay: FloatingShelfMotion.frameDelay)
+        }
+        let buttonAside = CGPoint(x: showButton.x + 6, y: showButton.y - 34)
+        for point in path(from: showButton, to: buttonAside, steps: 4) {
+            frame(cursor: point, shot: shots.favorite, list: shots.listShown, delay: 0.04)
+        }
+        frame(cursor: buttonAside, shot: shots.favorite, list: shots.listShown, delay: 1.8)
+
+        try writeGIF(scene.frames, named: "favorites.gif")
+    }
+
+    /// お気に入り一覧のウィンドウを出す（アプリの FavoritesWindowController と同じ作り）
+    func makeFavoritesWindow(list: FavoriteShelvesList, centeredAt center: CGPoint) -> NSWindow {
         let controller = NSHostingController(rootView: FavoritesListView(list: list))
         controller.sizingOptions = []
         let window = NSWindow(contentViewController: controller)
