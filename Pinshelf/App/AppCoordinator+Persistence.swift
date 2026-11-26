@@ -10,27 +10,27 @@ extension AppCoordinator {
         guard let snapshot = persistence.load() else { return }
         let coding = SystemBookmarkCoding()
 
-        var missing = 0
+        var files = FileRestoreTally()
         for stored in snapshot.shelves {
-            missing += restoreShelf(stored, using: coding)
+            files += restoreShelf(stored, using: coding)
         }
         // 前の形式では、画面端の棚の中身を別に保存していた。中身があれば、新しい画面端の棚に入れる
         let legacy = ShelfArchiver.restore(snapshot.edgeShelf, using: coding)
-        missing += legacy.missingCount
+        files += legacy.files
         edgeDriver.restoreLegacy(legacy, edge: snapshot.edgeShelfEdge, settings: TriggerSettings(defaults: .standard))
         recentShelves = RecentShelves(entries: snapshot.recentlyClosed)
-        persistence.reportMissingFiles(missing)
+        persistence.reportRestoredFiles(files)
     }
 
     /// 保存しておいた浮いた棚を戻す（再起動したとき・最近閉じた棚を開き直すとき）
-    /// - Returns: 見つからなかったファイルの数
+    /// - Returns: ファイルをどう戻せたかの数
     @discardableResult
-    func restoreShelf(_ stored: StoredShelfWindow, using coding: any BookmarkCoding) -> Int {
+    func restoreShelf(_ stored: StoredShelfWindow, using coding: any BookmarkCoding) -> FileRestoreTally {
         let model = ShelfModel(bookmarkCoding: coding)
         let restored = ShelfArchiver.restore(stored.shelf, using: coding)
         model.restore(restored)
         // ファイルが見つからず空になった棚は戻さない（お気に入りの棚は、空でも戻す）
-        guard !model.isEmpty || stored.isFavorite else { return restored.missingCount }
+        guard !model.isEmpty || stored.isFavorite else { return restored.files }
 
         let frame = EdgeGeometry.fit(stored.frame, into: NSScreen.screens.map(\.visibleFrame))
         let shelf = ShelfController(id: stored.id, frame: frame, model: model)
@@ -64,7 +64,7 @@ extension AppCoordinator {
         } else {
             shelf.show()
         }
-        return restored.missingCount
+        return restored.files
     }
 
     /// 今の棚の保存内容（空の棚は残さない。お気に入りの棚は、空でも隠していても残す）

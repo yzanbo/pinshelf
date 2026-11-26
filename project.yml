@@ -46,6 +46,9 @@ targets:
       - path: Pinshelf
     dependencies:
       - target: PinshelfCore
+      # 更新の仕組み（Sparkle）。make が Vendor/Sparkle に取り寄せたものを、アプリに入れる
+      - framework: Vendor/Sparkle/Sparkle.framework
+        embed: true
     info:
       path: Pinshelf/Info.plist
       properties:
@@ -56,12 +59,21 @@ targets:
           - ja
         # アプリの版（make dist・make publish もここから読む）。1.0.0 より前は β 版（設定画面にも「β 版」と出る）。
         # 出すたびに上げる。CFBundleVersion（ビルド番号）も 1 つずつ上げる
-        CFBundleShortVersionString: "0.2.1"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "0.3.0"
+        CFBundleVersion: "4"
         LSApplicationCategoryType: public.app-category.productivity
         # メニューバーに常駐し、Dock には出さない
         LSUIElement: true
         NSHumanReadableCopyright: ""
+        # 更新（Sparkle）。版の一覧（appcast.xml）の場所
+        SUFeedURL: https://raw.githubusercontent.com/yzanbo/pinshelf/main/appcast.xml
+        # 更新ファイルの署名を確かめる公開鍵（make update-key が書き込む。空のあいだは、更新の機能を出さない）
+        SUPublicEDKey: "fIyKq+2V6b4ohDcJu6T86VEbZV01mUdv7mWw5IE7cpY="
+        # 新しい版を自動で確かめる（1 日に 1 回。設定の「一般」で切れる）
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        # サンドボックスの中からは自分を入れ替えられないので、Sparkle の入れ替え役（XPC サービス）に任せる
+        SUEnableInstallerLauncherService: true
     entitlements:
       path: Pinshelf/Pinshelf.entitlements
       properties:
@@ -70,6 +82,15 @@ targets:
         com.apple.security.files.user-selected.read-write: true
         # 再起動後も棚のファイルを開けるように、security-scoped bookmark を使う
         com.apple.security.files.bookmarks.app-scope: true
+        # 更新の確認とダウンロードで、GitHub に接続する
+        com.apple.security.network.client: true
+        # Sparkle の入れ替え役と通信する（名前は Sparkle の決まり）
+        com.apple.security.temporary-exception.mach-lookup.global-name:
+          - $(PRODUCT_BUNDLE_IDENTIFIER)-spks
+          - $(PRODUCT_BUNDLE_IDENTIFIER)-spki
+        # Team ID のない署名（アドホック署名・自己署名）では、Hardened Runtime のままだと、
+        # アプリに入れた Sparkle の読み込みを断られるので、ライブラリの検証を切る
+        com.apple.security.cs.disable-library-validation: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pinshelf.Pinshelf
@@ -90,6 +111,9 @@ targets:
         # 自前の証明書（Pinshelf Dev）で署名しても読み込みを断られないよう、Debug だけ Hardened Runtime を切る
         Debug:
           ENABLE_HARDENED_RUNTIME: NO
+        # 配る版には、デバッガをつなぐための許可（get-task-allow）を入れない（何もしないと、Xcode がビルドのときに足す）
+        Release:
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
 schemes:
   Pinshelf:

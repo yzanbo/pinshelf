@@ -1,4 +1,5 @@
 import AppKit
+import os
 import PinshelfCore
 
 /// アプリの入口
@@ -7,9 +8,15 @@ import PinshelfCore
 /// メニューバーのアイコンにドロップを受けるため、SwiftUI の MenuBarExtra ではなく AppKit の NSStatusItem を使う。
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let logger = Logger(pinshelf: "app")
+
     private let coordinator = AppCoordinator()
     private let launchAtLogin = LaunchAtLogin()
-    private lazy var settingsWindow = SettingsWindowController(launchAtLogin: launchAtLogin)
+    /// 更新の状態（メニューバーのメニューと、設定の「一般」に出す）
+    private let updates = AppUpdates()
+    /// 更新の仕組み（公開鍵の入っていないビルドでは nil。SparkleUpdater）
+    private var updater: SparkleUpdater?
+    private lazy var settingsWindow = SettingsWindowController(launchAtLogin: launchAtLogin, updates: updates)
     private lazy var favoritesWindow = FavoritesWindowController(list: coordinator.favoritesList)
     private var statusItem: StatusItemController?
     private lazy var mainMenu = MainMenu(openSettings: { [weak self] in self?.openSettings() })
@@ -36,8 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handleTerminateSignal()
         coordinator.openSettings = { [weak self] in self?.openSettings() }
         coordinator.start()
+        updater = SparkleUpdater.start(updates: updates)
+        logLaunch()
 
-        let statusItem = StatusItemController()
+        let statusItem = StatusItemController(updates: updates)
         statusItem.onNewShelf = { [weak self] in self?.coordinator.openShelfFromMenu() }
         statusItem.onOpenEdgeShelf = { [weak self] in self?.coordinator.openEdgeShelf() }
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
@@ -54,6 +63,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.handleMenuBarDrop(pasteboard, below: iconFrame) ?? false
         }
         self.statusItem = statusItem
+    }
+
+    /// 起動したことを記録に残す（更新のあと、どの版が動いているか、「ログイン時に起動」が入ったままかを、あとから確かめられるように）
+    private func logLaunch() {
+        let version = Bundle.main.shortVersion ?? "?"
+        let build = Bundle.main.buildNumber ?? "?"
+        let loginItem = String(describing: launchAtLogin.status)
+        Self.logger.notice("起動しました: 版 \(version, privacy: .public)（ビルド \(build, privacy: .public)）、ログイン時に起動: \(loginItem, privacy: .public)")
     }
 
     /// 設定のウィンドウを開く（メニューバーのアイコン・上のメニューバー・棚のメニューから）

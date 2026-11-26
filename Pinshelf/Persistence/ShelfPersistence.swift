@@ -11,7 +11,7 @@ final class ShelfPersistence {
 
     private let store: ShelfSnapshotStore
     private var pendingSave: Task<Void, Never>?
-    private let logger = Logger(subsystem: "app.pinshelf.Pinshelf", category: "persistence")
+    private let logger = Logger(pinshelf: "persistence")
 
     private static let saveDelay: Duration = .milliseconds(500)
 
@@ -31,10 +31,11 @@ final class ShelfPersistence {
         }
     }
 
-    /// 戻せなかったファイルの数を記録する（原因を調べるため）
-    func reportMissingFiles(_ count: Int) {
-        guard count > 0 else { return }
-        logger.notice("見つからなかったファイルを \(count) 個、棚に戻しませんでした")
+    /// 棚のファイルをどう戻せたかを記録する（戻せなかったときの原因や、アプリを入れ替えたあともブックマークで
+    /// 開けているかを、あとから確かめられるように。ファイルを置いていなければ、何も残さない）
+    func reportRestoredFiles(_ files: FileRestoreTally) {
+        guard files.total > 0 else { return }
+        logger.notice("棚のファイルを戻しました: ブックマークで \(files.byBookmark) 個、パスで \(files.byPath) 個、見つからず \(files.missing) 個")
     }
 
     /// 少し待ってから保存する（続けて呼ばれたら、最後の 1 回だけ保存する）
