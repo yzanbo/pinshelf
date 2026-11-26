@@ -4,12 +4,15 @@
 # - 更新ファイルに署名する鍵があり、アプリに入れる公開鍵（project.yml の SUPublicEDKey）と合っている
 #   （合わない鍵で署名すると、入れてもらったアプリが更新を受け付けなくなる）
 # - main にいて、コミットしていない変更がなく、GitHub の main と同じ
+# - この版（タグ v<版>）を、まだ GitHub に公開していない（版を上げ忘れたまま流すと、DMG と zip を作り、
+#   appcast.xml を作り直したところで、Release を作れずに止まるため）
 #   （Release のタグは GitHub の main に付き、あとの appcast.xml のプッシュで手元の main も送るため）
 #
-# 使い方: publish-check.sh <project.yml の公開鍵>
+# 使い方: publish-check.sh <project.yml の公開鍵> <出す版（例: 0.3.1-beta.1）>
 set -euo pipefail
 
 EXPECTED_KEY="${1:-}"
+RELEASE_NAME="${2:-}"
 BIN="Vendor/Sparkle/bin"
 
 if [ -z "${EXPECTED_KEY}" ]; then
@@ -37,5 +40,10 @@ fi
 git fetch -q origin main
 if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   echo "手元の main が、GitHub の main と違います。プッシュ（か pull）してから、公開してください。" >&2
+  exit 1
+fi
+
+if [ -n "$(git ls-remote --tags origin "refs/tags/v${RELEASE_NAME}")" ]; then
+  echo "v${RELEASE_NAME} は、もう公開しています。版とビルド番号を上げた変更（PR）を main に入れてから、公開してください。" >&2
   exit 1
 fi

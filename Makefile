@@ -124,8 +124,9 @@ publish: publish-check dist
 # 公開の前に確かめる（そろっていなければ、何も作らずに止める）
 # - 更新ファイルに署名する鍵があり、アプリに入れる公開鍵（project.yml）と合っている（合わない鍵で署名すると、更新が届かなくなる）
 # - コミットしていない変更がなく、GitHub の main と同じ（Release のタグは GitHub の main に付き、appcast.xml のプッシュで手元の main も送るため）
+# - この版（タグ v版）を、まだ公開していない（版を上げ忘れたまま流すと、appcast.xml だけ作り直して止まるため）
 publish-check: $(SPARKLE_STAMP)
-	./scripts/publish-check.sh "$(UPDATE_PUBLIC_KEY)"
+	./scripts/publish-check.sh "$(UPDATE_PUBLIC_KEY)" "$(RELEASE_NAME)"
 
 # 更新ファイルの署名に使う鍵（EdDSA）を用意して、公開鍵を project.yml に書き込む（最初の 1 回だけ）。
 # 秘密鍵は、この Mac のログインキーチェーンに入る（途中で、キーチェーンへのアクセスを聞かれたら許可する）
