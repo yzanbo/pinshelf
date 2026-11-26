@@ -4,6 +4,8 @@ import SwiftUI
 /// 棚の見出し: 閉じる・しまう・お気に入りの ★ のボタン、名前（なければ件数）、元に戻す・メニュー・ピン・帯にたたむボタン
 ///
 /// 上の帯をつかんで棚を動かせる。ダブルクリックでしまう・浮かせる。名前を変えるときは、ここで入力する。
+/// ボタンが棚の幅に入りきらないとき（いちばん狭い画面の端の棚に、元に戻すボタンが出たときなど）は、しまう・浮かせるボタンを省く
+/// （見出しのダブルクリック・… のメニュー・見出しをつかんで運ぶ、でもできるため）。
 struct ShelfHeader: View {
     let model: ShelfModel
     let state: ShelfState
@@ -20,73 +22,14 @@ struct ShelfHeader: View {
     private static let minimumTitleWidth: CGFloat = 16
 
     var body: some View {
-        // 左右のボタン欄は中身の幅だけにする（決まった幅で取ると、狭い棚で名前の欄が足りなくなる）
-        HStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Button(action: actions.close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 18, height: 18)
-                        .background(.quaternary, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .clickablePointer()
-                .help(state.isFavorite ? "隠す（メニューバーの「お気に入りの棚」から出し直せます）" : "閉じる（メニューバーの「最近閉じた棚」から開き直せます）")
-
-                Button(action: actions.toggleDock) {
-                    Image(systemName: state.isDocked ? "macwindow" : "sidebar.right")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.borderless)
-                .clickablePointer()
-                .help(state.isDocked ? "浮かせる（見出しをつかんで真ん中へ運ぶ・ダブルクリックでも）" : "画面の端にしまう（画面の端まで運ぶ・見出しのダブルクリックでも）")
-
-                favoriteButton
-            }
-            .fixedSize()
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { leadingButtonsWidth = $0 }
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 6) {
-                // 元に戻せるときは「元に戻す」
-                if model.undoCount > 0 {
-                    UndoButton(model: model)
-                }
-                Menu {
-                    ShelfMenu(state: state, actions: actions)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .clickablePointer()
-                .help("棚のメニュー（名前・色・お気に入り・大きさ）")
-                // 画面の端にある棚は、開いたままにするピンと、帯にたたむボタン（画面の端の向きの矢印）
-                if let edge = state.dockedEdge {
-                    Button(action: actions.toggleKeepsOpen) {
-                        Image(systemName: state.keepsOpen ? "pin.fill" : "pin")
-                            .font(.system(size: 11))
-                            .foregroundStyle(state.keepsOpen ? Color.accentColor : Color.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .clickablePointer()
-                    .help(state.keepsOpen
-                        ? "開いたままにしています（押すと、ポインタが離れたら帯にたたむようになります）"
-                        : "開いたままにする（いまは、ポインタが離れると帯にたたみます）")
-                    Button(action: actions.fold) {
-                        Image(systemName: edge == .right ? "chevron.right" : "chevron.left")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.borderless)
-                    .clickablePointer()
-                    .help("帯にたたむ")
-                }
-            }
-            .fixedSize()
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingButtonsWidth = $0 }
+        // 左右のボタン欄は中身の幅だけにする（決まった幅で取ると、狭い棚で名前の欄が足りなくなる）。
+        // 全部のボタンが入らなければ、しまう・浮かせるボタンを省いた並びにする
+        ViewThatFits(in: .horizontal) {
+            buttonRow(showsDockButton: true)
+            buttonRow(showsDockButton: false)
         }
+        // それでも入らないときも、見出しを棚より広げない（広げると、棚ごと枠からはみ出して、角丸の角が切れる）
+        .frame(minWidth: 0, maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
         // 名前（なければ件数）は 1 行で置く（折り返さない）
         .overlay {
@@ -115,6 +58,121 @@ struct ShelfHeader: View {
         .allowsWindowActivationEvents(true)
         .contextMenu { ShelfMenu(state: state, actions: actions) }
     }
+
+    /// 左右のボタン欄（showsDockButton が false なら、しまう・浮かせるボタンを省く）
+    private func buttonRow(showsDockButton: Bool) -> some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                closeButton
+                if showsDockButton {
+                    dockButton
+                }
+                favoriteButton
+            }
+            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { leadingButtonsWidth = $0 }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 6) {
+                // 元に戻せるときは「元に戻す」
+                if model.undoCount > 0 {
+                    UndoButton(model: model)
+                }
+                menuButton
+                // 画面の端にある棚は、開いたままにするピンと、帯にたたむボタン（画面の端の向きの矢印）
+                if let edge = state.dockedEdge {
+                    keepsOpenButton
+                    foldButton(edge: edge)
+                }
+            }
+            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingButtonsWidth = $0 }
+        }
+    }
+
+    // MARK: - ボタン
+
+    /// 閉じる（お気に入りの棚は隠す）
+    private var closeButton: some View {
+        Button(action: actions.close) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 18, height: 18)
+                .background(.quaternary, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .clickablePointer()
+        .help(state.isFavorite ? "隠す（メニューバーの「お気に入りの棚」から出し直せます）" : "閉じる（メニューバーの「最近閉じた棚」から開き直せます）")
+    }
+
+    /// 画面の端にしまう・浮かせる
+    private var dockButton: some View {
+        Button(action: actions.toggleDock) {
+            Image(systemName: state.isDocked ? "macwindow" : "sidebar.right")
+                .font(.system(size: 11))
+        }
+        .buttonStyle(.borderless)
+        .clickablePointer()
+        .help(state.isDocked ? "浮かせる（見出しをつかんで真ん中へ運ぶ・ダブルクリックでも）" : "画面の端にしまう（画面の端まで運ぶ・見出しのダブルクリックでも）")
+    }
+
+    /// お気に入りの ★。いつも出して、お気に入りかどうかがすぐ分かるようにする。押すと、お気に入りにする・外す
+    private var favoriteButton: some View {
+        Button(action: actions.toggleFavorite) {
+            Image(systemName: state.isFavorite ? "star.fill" : "star")
+                .font(.system(size: 11))
+                .foregroundStyle(state.isFavorite ? Color.yellow : Color.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .clickablePointer()
+        .help(state.isFavorite
+            ? "お気に入り（閉じても中身ごと残ります）。押すと、お気に入りから外します"
+            : "お気に入りにする（閉じても中身ごと残り、メニューバーから出し直せます）")
+        .accessibilityLabel(state.isFavorite ? "お気に入りから外す" : "お気に入りにする")
+    }
+
+    /// 棚のメニュー（…）
+    private var menuButton: some View {
+        Menu {
+            ShelfMenu(state: state, actions: actions)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .clickablePointer()
+        .help("棚のメニュー（名前・色・お気に入り・大きさ）")
+    }
+
+    /// 画面の端で開いたままにするピン
+    private var keepsOpenButton: some View {
+        Button(action: actions.toggleKeepsOpen) {
+            Image(systemName: state.keepsOpen ? "pin.fill" : "pin")
+                .font(.system(size: 11))
+                .foregroundStyle(state.keepsOpen ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.borderless)
+        .clickablePointer()
+        .help(state.keepsOpen
+            ? "開いたままにしています（押すと、ポインタが離れたら帯にたたむようになります）"
+            : "開いたままにする（いまは、ポインタが離れると帯にたたみます）")
+    }
+
+    /// 帯にたたむ（しまっている画面の端の向きの矢印）
+    private func foldButton(edge: ScreenEdge) -> some View {
+        Button(action: actions.fold) {
+            Image(systemName: edge == .right ? "chevron.right" : "chevron.left")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .buttonStyle(.borderless)
+        .clickablePointer()
+        .help("帯にたたむ")
+    }
+
+    // MARK: - 名前
 
     /// 左右のボタンのあいだの、名前を置ける幅（狭い画面の端の棚に元に戻すボタンが出ると、ほとんど残らない）
     private var titleRoom: CGFloat {
@@ -177,22 +235,6 @@ struct ShelfHeader: View {
                 }
             }
         }
-    }
-
-    /// お気に入りの ★。いつも出して、お気に入りかどうかがすぐ分かるようにする。押すと、お気に入りにする・外す
-    private var favoriteButton: some View {
-        Button(action: actions.toggleFavorite) {
-            Image(systemName: state.isFavorite ? "star.fill" : "star")
-                .font(.system(size: 11))
-                .foregroundStyle(state.isFavorite ? Color.yellow : Color.secondary)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .clickablePointer()
-        .help(state.isFavorite
-            ? "お気に入り（閉じても中身ごと残ります）。押すと、お気に入りから外します"
-            : "お気に入りにする（閉じても中身ごと残り、メニューバーから出し直せます）")
-        .accessibilityLabel(state.isFavorite ? "お気に入りから外す" : "お気に入りにする")
     }
 }
 
