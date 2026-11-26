@@ -7,6 +7,8 @@
 // 使い方: ReadmeImages <書き出すフォルダ>
 //   - hero.png: 全体の見本（画面の端の棚・帯・浮いた棚・メニューバーのアイコン）
 //   - edge.gif: ファイルをドラッグし始める → 画面の端に帯が出る → 近づくと開く → 落とす → 離れると帯にたたむ
+//   - shake.gif: ファイルをドラッグしながら振る → カーソルの位置に棚が出る → 落とす
+//   - favorites.png: 見出しの ★ でお気に入りにした棚と、お気に入り一覧のウィンドウ
 import AppKit
 import PinshelfCore
 import SwiftUI
@@ -40,7 +42,13 @@ struct ShelfShot {
 
 /// 棚のウィンドウの中身を、レイヤーごと描き写す（ウィンドウの影は写らないので、並べるときに描く）
 func capture(_ shelf: ShelfController, scale: CGFloat) -> ShelfShot? {
-    guard let view = shelf.panel.contentView, let layer = view.layer else { return nil }
+    guard let view = shelf.panel.contentView else { return nil }
+    return capture(view, scale: scale).map { ShelfShot(image: $0, frame: shelf.panel.frame) }
+}
+
+/// ビューを、レイヤーごと描き写す（scale 倍の画素）
+func capture(_ view: NSView, scale: CGFloat) -> CGImage? {
+    guard let layer = view.layer else { return nil }
     let size = view.bounds.size
     guard size.width > 0, size.height > 0,
           let context = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
@@ -52,7 +60,7 @@ func capture(_ shelf: ShelfController, scale: CGFloat) -> ShelfShot? {
         context.scaleBy(x: 1, y: -1)
     }
     layer.render(in: context)
-    return context.makeImage().map { ShelfShot(image: $0, frame: shelf.panel.frame) }
+    return context.makeImage()
 }
 
 /// 動いている間、interval ごとに写す
@@ -65,6 +73,25 @@ func record(_ shelf: ShelfController, scale: CGFloat, for duration: Duration, ev
         try? await Task.sleep(for: interval)
     }
     return shots
+}
+
+/// 速さの変わり方（CAMediaTimingFunction の曲線）で、時間の割合 t（0〜1）のときの進み具合を求める
+func progress(_ function: CAMediaTimingFunction, at t: Double) -> Double {
+    var p1: [Float] = [0, 0]
+    var p2: [Float] = [0, 0]
+    function.getControlPoint(at: 1, values: &p1)
+    function.getControlPoint(at: 2, values: &p2)
+    func bezier(_ s: Double, _ a: Float, _ b: Float) -> Double {
+        let a = Double(a), b = Double(b)
+        return 3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s
+    }
+    // x が t になる s を二分法で探し、そのときの y を返す
+    var low = 0.0, high = 1.0
+    for _ in 0..<40 {
+        let mid = (low + high) / 2
+        if bezier(mid, p1[0], p2[0]) < t { low = mid } else { high = mid }
+    }
+    return bezier((low + high) / 2, p1[1], p2[1])
 }
 
 // MARK: - 描く
@@ -134,8 +161,13 @@ final class Canvas {
         }
     }
 
-    /// ファイルの並んだ、架空のウィンドウ（Finder のような見た目の絵）
-    func fileWindow(_ rect: CGRect, title: String, files: [URL], hidden: Set<URL> = []) {
+    /// ウィンドウの上のバーの高さ
+    static let titleBarHeight: CGFloat = 32
+
+    /// 架空のウィンドウの枠（影・白い地・3 つの丸と題の入った上のバー）を描き、中身を描く場所を返す
+    @discardableResult
+    func window(_ rect: CGRect, title: String) -> CGRect {
+        let barHeight = Self.titleBarHeight
         let path = CGPath(roundedRect: rect, cornerWidth: 12, cornerHeight: 12, transform: nil)
         context.saveGState()
         context.setShadow(offset: CGSize(width: 0, height: -8), blur: 24, color: color(0x000000, 0.18))
@@ -144,7 +176,6 @@ final class Canvas {
         context.fillPath()
         context.restoreGState()
         // 上のバー（3 つの丸と題）
-        let barHeight: CGFloat = 32
         context.saveGState()
         context.addPath(path)
         context.clip()
@@ -158,6 +189,25 @@ final class Canvas {
         withAppKit {
             let titleText = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.darkGray])
             titleText.draw(at: CGPoint(x: rect.midX - titleText.size().width / 2, y: rect.maxY - barHeight / 2 - titleText.size().height / 2))
+        }
+        return CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - barHeight)
+    }
+
+    /// 写したウィンドウの中身を、架空のウィンドウの枠に入れて置く（下の角は枠に合わせて丸める）
+    func window(_ rect: CGRect, title: String, content: CGImage) {
+        let contentRect = window(rect, title: title)
+        context.saveGState()
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: 12, cornerHeight: 12, transform: nil))
+        context.clip()
+        context.draw(content, in: contentRect)
+        context.restoreGState()
+    }
+
+    /// ファイルの並んだ、架空のウィンドウ（Finder のような見た目の絵）
+    func fileWindow(_ rect: CGRect, title: String, files: [URL], hidden: Set<URL> = []) {
+        window(rect, title: title)
+        let barHeight = Self.titleBarHeight
+        withAppKit {
             // ファイルを並べる（3 列）
             let columns = 3
             let cell = CGSize(width: (rect.width - 24) / CGFloat(columns), height: 92)
@@ -178,12 +228,13 @@ final class Canvas {
         let cell = CGSize(width: (rect.width - 24) / CGFloat(columns), height: 92)
         let column = index % columns
         let row = index / columns
-        return CGPoint(x: rect.minX + 12 + CGFloat(column) * cell.width + cell.width / 2, y: rect.maxY - 32 - 14 - CGFloat(row + 1) * cell.height + 56)
+        return CGPoint(x: rect.minX + 12 + CGFloat(column) * cell.width + cell.width / 2, y: rect.maxY - titleBarHeight - 14 - CGFloat(row + 1) * cell.height + 56)
     }
 
-    /// 写した棚を、影を付けて置く
-    func shelf(_ shot: ShelfShot, at origin: CGPoint, alpha: CGFloat = 1) {
-        let rect = CGRect(origin: origin, size: shot.frame.size)
+    /// 写した棚を、影を付けて置く（scale は真ん中を中心にした大きさ。出てくるときの動きに使う）
+    func shelf(_ shot: ShelfShot, at origin: CGPoint, alpha: CGFloat = 1, scale: CGFloat = 1) {
+        let full = CGRect(origin: origin, size: shot.frame.size)
+        let rect = full.insetBy(dx: full.width * (1 - scale) / 2, dy: full.height * (1 - scale) / 2)
         context.saveGState()
         context.setAlpha(alpha)
         context.setShadow(offset: CGSize(width: 0, height: -6), blur: 18, color: color(0x000000, 0.22))
@@ -269,6 +320,8 @@ final class ReadmeImages {
         let shelf = size.map { size in
             ShelfController(id: UUID(), frame: CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height), model: ShelfModel())
         } ?? ShelfController(centeredAt: point)
+        // 本物のマウスが重なっても、ポインタを乗せたときの強調や、帯の開け閉めが写らないようにする
+        shelf.panel.ignoresMouseEvents = true
         coordinator.register(shelf)
         // まとめて入れるとスタック（重なった 1 つ）になるので、1 つずつ入れて並べて見せる
         for item in items {
@@ -296,6 +349,8 @@ final class ReadmeImages {
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
         try await makeHero()
         try await makeEdgeGIF()
+        try await makeShakeGIF()
+        try await makeFavorites()
         for shelf in coordinator.shelves { shelf.discard() }
         try? FileManager.default.removeItem(at: sampleFolder)
     }
@@ -425,6 +480,145 @@ final class ReadmeImages {
 
         try writeGIF(frames, to: outputFolder.appending(path: "edge.gif"))
         print("書き出しました: edge.gif（\(frames.count) コマ）")
+    }
+
+    // MARK: shake.gif
+
+    func makeShakeGIF() async throws {
+        let visible = screen.visibleFrame
+        let proposal = sampleFile("企画書.pdf")
+        let estimate = sampleFile("見積もり.xlsx")
+        let logo = sampleFile("ロゴ.png")
+        let scale: CGFloat = 2
+
+        // 本物の棚で、空の棚と、落としたあとの棚を写す
+        let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [], size: CGSize(width: 220, height: 170))
+        shelf.show()
+        await settle()
+        guard let empty = capture(shelf, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
+        shelf.model.accept(contents: [.file(proposal)])
+        await settle()
+        guard let filled = capture(shelf, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
+        shelf.discard()
+        await settle()
+
+        // 架空のデスクトップの上に並べる
+        let size = CGSize(width: 640, height: 400)
+        let window = CGRect(x: 36, y: 96, width: 270, height: 230)
+        let files = [proposal, estimate, logo]
+        let start = Canvas.fileCenter(in: window, index: 0)
+        // 振る場所（棚は、ここを真ん中にして出る）
+        let shakeCenter = CGPoint(x: 470, y: 214)
+        var frames: [(image: CGImage, delay: Double)] = []
+
+        /// 1 コマを描く（shot: 出ている棚、appear: 出てくる動きの進み具合（0〜1）、dragging: ドラッグしているか）
+        func frame(cursor: CGPoint, shot: ShelfShot?, appear: CGFloat = 1, dragging: Bool, delay: Double) {
+            let canvas = Canvas(size: size, scale: scale)
+            canvas.wallpaper(gradient: false)
+            canvas.fileWindow(window, title: "書類", files: files)
+            if let shot {
+                // アプリと同じく、少し小さい状態からふわっと出す
+                let origin = CGPoint(x: shakeCenter.x - shot.frame.width / 2, y: shakeCenter.y - shot.frame.height / 2)
+                canvas.shelf(shot, at: origin, alpha: appear, scale: ShelfMotion.appearScale + (1 - ShelfMotion.appearScale) * appear)
+            }
+            canvas.menuBar(height: 22)
+            if dragging { canvas.draggedFile(proposal, at: cursor) }
+            canvas.cursor(at: cursor)
+            frames.append((downscale(canvas.image(), by: Int(scale)), delay))
+        }
+        func lerp(_ a: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint {
+            CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+        }
+
+        // 1. ファイルの上にカーソル
+        frame(cursor: start, shot: nil, dragging: false, delay: 0.8)
+        // 2. ドラッグして、何もないところへ運ぶ
+        for step in 1...10 {
+            frame(cursor: lerp(start, shakeCenter, CGFloat(step) / 10), shot: nil, dragging: true, delay: 0.05)
+        }
+        // 3. 左右に軽く振る
+        let swings: [CGFloat] = [0, 32, -32, 32, -32, 24, 0]
+        for (from, to) in zip(swings, swings.dropFirst()) {
+            for step in 1...2 {
+                let x = from + (to - from) * CGFloat(step) / 2
+                frame(cursor: CGPoint(x: shakeCenter.x + x, y: shakeCenter.y), shot: nil, dragging: true, delay: 0.035)
+            }
+        }
+        // 4. カーソルの位置に棚が出る（アプリと同じ長さ・同じ速さの変わり方）
+        let appearFrames = max(1, Int((ShelfMotion.duration / 0.03).rounded()))
+        for step in 1...appearFrames {
+            let t = progress(ShelfMotion.timingFunction, at: Double(step) / Double(appearFrames))
+            frame(cursor: shakeCenter, shot: empty, appear: CGFloat(t), dragging: true, delay: 0.03)
+        }
+        frame(cursor: shakeCenter, shot: empty, dragging: true, delay: 0.6)
+        // 5. 落とすと、棚に入る（元のファイルは動かない）
+        frame(cursor: shakeCenter, shot: filled, dragging: false, delay: 0.9)
+        // 6. カーソルを離す
+        let away = CGPoint(x: shakeCenter.x - 40, y: 70)
+        for step in 1...6 {
+            frame(cursor: lerp(shakeCenter, away, CGFloat(step) / 6), shot: filled, dragging: false, delay: 0.04)
+        }
+        frame(cursor: away, shot: filled, dragging: false, delay: 1.5)
+
+        try writeGIF(frames, to: outputFolder.appending(path: "shake.gif"))
+        print("書き出しました: shake.gif（\(frames.count) コマ）")
+    }
+
+    // MARK: favorites.png
+
+    func makeFavorites() async throws {
+        let visible = screen.visibleFrame
+        let scale: CGFloat = 2
+
+        // 見出しの ★ でお気に入りにした棚
+        let shelf = makeShelf(
+            at: CGPoint(x: visible.midX - 220, y: visible.midY), items: [sampleFile("旅行の写真.jpg"), sampleFile("打ち合わせメモ.txt")],
+            size: CGSize(width: 250, height: 190), name: "あとで送る", color: .orange, favorite: true
+        )
+        shelf.show()
+
+        // お気に入り一覧（アプリと同じ画面に、見本の棚を並べる）
+        let list = FavoriteShelvesList()
+        let entries = [
+            FavoriteShelfEntry(id: shelf.id, title: "あとで送る", color: .orange, count: 2, isVisible: true),
+            FavoriteShelfEntry(id: UUID(), title: "デザイン素材", color: .purple, count: 8, isVisible: false),
+            FavoriteShelfEntry(id: UUID(), title: "請求書の控え", color: .green, count: 3, isVisible: false),
+        ]
+        list.load = { entries }
+        list.reload()
+        let controller = NSHostingController(rootView: FavoritesListView(list: list))
+        controller.sizingOptions = []
+        let listWindow = NSWindow(contentViewController: controller)
+        listWindow.styleMask = [.titled, .closable, .resizable]
+        listWindow.title = "お気に入り一覧"
+        // 高さは一覧の最小（これより低いと、下の説明が切れる）
+        listWindow.setContentSize(NSSize(width: 340, height: 200))
+        listWindow.setFrameOrigin(CGPoint(x: visible.midX + 20, y: visible.midY - 100))
+        listWindow.ignoresMouseEvents = true
+        listWindow.orderFrontRegardless()
+        await settle()
+
+        guard let shelfShot = capture(shelf, scale: scale), let listView = listWindow.contentView,
+              let listShot = capture(listView, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
+        let listSize = listView.bounds.size
+        listWindow.orderOut(nil)
+        shelf.discard()
+        await settle()
+
+        let canvas = Canvas(size: CGSize(width: 800, height: 340), scale: scale)
+        canvas.wallpaper(gradient: true)
+        // メニューバーの下の真ん中に、棚と一覧の高さをそろえて並べる
+        let middle = (canvas.size.height - 24) / 2
+        let shelfOrigin = CGPoint(x: 70, y: middle - shelfShot.frame.height / 2)
+        canvas.shelf(shelfShot, at: shelfOrigin)
+        let windowHeight = listSize.height + Canvas.titleBarHeight
+        let windowRect = CGRect(x: 400, y: middle - windowHeight / 2, width: listSize.width, height: windowHeight)
+        canvas.window(windowRect, title: "お気に入り一覧", content: listShot)
+        // 見出しの ★ を指す（★ が隠れないよう、少し右下に）
+        canvas.cursor(at: CGPoint(x: shelfOrigin.x + 72, y: shelfOrigin.y + shelfShot.frame.height - 27))
+        canvas.menuBar()
+        try writePNG(canvas.image(), to: outputFolder.appending(path: "favorites.png"))
+        print("書き出しました: favorites.png")
     }
 }
 
