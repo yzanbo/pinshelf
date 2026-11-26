@@ -20,6 +20,14 @@ let outputFolder = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? Comman
 /// 描くときの倍率（PNG はこのまま書き出し、GIF は軽くするため 1 倍に縮めて書き出す）
 let renderScale: CGFloat = 2
 
+/// README の見本の大きさ（Pinstage と同じ。README には幅 800 で載せる）
+enum ReadmeLayout {
+    /// どの画像も、この大きさ（pt）の架空の画面に描く（hero.png は 2 倍の画素、GIF は 1 倍の画素で書き出す）
+    static let size = CGSize(width: 980, height: 700)
+    /// メニューバーの下の、上下の真ん中
+    static var middleY: CGFloat { (size.height - Canvas.menuBarHeight) / 2 }
+}
+
 /// 画像を作れなかったわけ
 enum ReadmeImagesError: Error, CustomStringConvertible {
     case captureFailed
@@ -49,6 +57,8 @@ enum Sample {
     static var memo: URL { file("打ち合わせメモ.txt") }
     static var invoice: URL { file("請求書.pdf") }
     static var slides: URL { file("資料.key") }
+    static var archive: URL { file("素材.zip") }
+    static var movie: URL { file("紹介動画.mp4") }
 
     private static func file(_ name: String) -> URL {
         let url = sampleFolder.appending(path: name)
@@ -412,17 +422,8 @@ final class Canvas {
 
 /// GIF のコマを、1 コマずつ描いて足す（毎回、架空のデスクトップ・メニューバー・カーソルを描く）
 final class GIFScene {
-    /// edge.gif・shake.gif・drag-out.gif の大きさ
-    static let standardSize = CGSize(width: 640, height: 400)
-    /// GIF のメニューバーの高さ
-    static let menuBarHeight: CGFloat = 22
-
-    let size: CGSize
+    let size = ReadmeLayout.size
     private(set) var frames: [GIFFrame] = []
-
-    init(size: CGSize = standardSize) {
-        self.size = size
-    }
 
     /// 1 コマを描いて足す
     /// - dragging: カーソルに付けて描く、ドラッグしているファイル
@@ -432,7 +433,7 @@ final class GIFScene {
         let canvas = Canvas(size: size)
         canvas.wallpaper(gradient: false)
         draw(canvas)
-        canvas.menuBar(height: Self.menuBarHeight)
+        canvas.menuBar()
         if let dragging { canvas.draggedFile(dragging, at: cursor) }
         if clicking { canvas.click(at: cursor) }
         canvas.cursor(at: cursor)
@@ -442,8 +443,10 @@ final class GIFScene {
 
 /// ファイルをドラッグし始める「書類」のウィンドウ（edge.gif・shake.gif）
 enum DocumentsWindow {
-    static let rect = CGRect(x: 36, y: 96, width: 270, height: 230)
-    static var files: [URL] { [Sample.proposal, Sample.estimate, Sample.logo] }
+    static let rect = CGRect(x: 70, y: ReadmeLayout.middleY - 200, width: 380, height: 400)
+    static var files: [URL] {
+        [Sample.proposal, Sample.estimate, Sample.logo, Sample.minutes, Sample.photo, Sample.memo, Sample.invoice, Sample.archive, Sample.movie]
+    }
     /// ドラッグするファイル
     static var dragged: URL { Sample.proposal }
     /// ドラッグし始める位置（ドラッグするファイルの上）
@@ -498,7 +501,8 @@ func writeGIF(_ frames: [GIFFrame], named name: String) throws {
 
 @MainActor
 final class ReadmeImages {
-    let screen = NSScreen.main!
+    /// 棚を出して写す画面。Retina（2 倍）の画面にする（1 倍の画面に出すと、文字が 1 倍で描かれて、2 倍の画像ではぼやけるため）
+    let screen = NSScreen.screens.first { $0.backingScaleFactor >= renderScale } ?? NSScreen.main!
     let coordinator = AppCoordinator()
 
     /// 新しい棚を作る（items を 1 つずつ入れ、name・color・favorite を付ける。size を渡すと、その大きさの浮いた棚にする）
@@ -506,9 +510,10 @@ final class ReadmeImages {
         at point: CGPoint, items: [URL], size: CGSize? = nil, name: String? = nil, color: ShelfColor = .none, favorite: Bool = false
     ) -> ShelfController {
         let shelf = size.map { size in
-            ShelfController(id: UUID(), frame: CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height), model: ShelfModel())
+            let frame = CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height)
+            return ShelfController(id: UUID(), frame: awayFromPointer(frame), model: ShelfModel())
         } ?? ShelfController(centeredAt: point)
-        // 本物のマウスが重なっても、ポインタを乗せたときの強調や、帯の開け閉めが写らないようにする
+        // 本物のマウスが重なっても、帯の開け閉めが起きないようにする
         shelf.panel.ignoresMouseEvents = true
         coordinator.register(shelf)
         // まとめて入れるとスタック（重なった 1 つ）になるので、1 つずつ入れて並べて見せる
@@ -523,9 +528,24 @@ final class ReadmeImages {
 
     /// 画面の右端にしまう（unfolded なら、ドラッグで近づけたときと同じく開いたまま）
     func dockRight(_ shelf: ShelfController, centerY: CGFloat, unfolded: Bool) {
+        // 本物のマウスが右端の近くにあれば、上下のうち、マウスのない側にしまう
+        let visible = screen.visibleFrame
+        let pointer = NSEvent.mouseLocation
+        let y = pointer.x > visible.maxX - 400 ? (pointer.y > visible.midY ? visible.minY + 260 : visible.maxY - 260) : centerY
         shelf.show()
-        shelf.dock(to: .right, on: screen, centerY: centerY, unfolded: false, animated: false)
+        shelf.dock(to: .right, on: screen, centerY: y, unfolded: false, animated: false)
         if unfolded { shelf.unfold(byDrag: true) }
+    }
+
+    /// 本物のマウスと重ならない枠にする。重なるときは、画面の左右のうち、マウスのない側へ動かす
+    /// （重なると、中身にポインタを乗せたときの強調が写る。ignoresMouseEvents にしても、この強調は出るため）
+    func awayFromPointer(_ frame: CGRect) -> CGRect {
+        let pointer = NSEvent.mouseLocation
+        guard frame.insetBy(dx: -40, dy: -40).contains(pointer) else { return frame }
+        let visible = screen.visibleFrame
+        var moved = frame
+        moved.origin.x = pointer.x > visible.midX ? visible.minX + 60 : visible.midX + 60
+        return moved
     }
 
     /// 出す・動かすアニメーションが終わるのを待つ
@@ -551,7 +571,7 @@ final class ReadmeImages {
         let visible = screen.visibleFrame
         let edge = makeShelf(at: CGPoint(x: visible.maxX - 200, y: visible.midY), items: [Sample.proposal, Sample.estimate, Sample.logo])
         // 中身が 2 列に並ぶ幅にする
-        edge.state.dockedSize = CGSize(width: 180, height: 250)
+        edge.state.dockedSize = CGSize(width: 200, height: 380)
         dockRight(edge, centerY: visible.midY + 100, unfolded: true)
         let folded = makeShelf(
             at: CGPoint(x: visible.maxX - 200, y: visible.midY),
@@ -559,7 +579,7 @@ final class ReadmeImages {
         )
         dockRight(folded, centerY: visible.midY - 220, unfolded: false)
         let floating = makeShelf(
-            at: CGPoint(x: visible.midX, y: visible.midY), items: [Sample.photo, Sample.memo], size: CGSize(width: 240, height: 190),
+            at: CGPoint(x: visible.midX, y: visible.midY), items: [Sample.photo, Sample.memo], size: CGSize(width: 280, height: 260),
             name: "あとで送る", color: .orange, favorite: true
         )
         floating.show()
@@ -570,16 +590,15 @@ final class ReadmeImages {
         let floatingShot = try capture(floating)
         for shelf in [edge, folded, floating] { shelf.discard() }
 
-        let canvas = Canvas(size: CGSize(width: 880, height: 540))
+        // 左に書類のウィンドウ、真ん中に浮いた棚、右端に開いた棚と、たたんだ帯
+        let canvas = Canvas(size: ReadmeLayout.size)
+        let middle = ReadmeLayout.middleY
         canvas.wallpaper(gradient: true)
-        canvas.fileWindow(
-            CGRect(x: 56, y: 150, width: 330, height: 300), title: "書類",
-            files: [Sample.proposal, Sample.estimate, Sample.logo, Sample.minutes, Sample.photo, Sample.memo]
-        )
-        canvas.shelf(floatingShot, at: CGPoint(x: 420, y: 240))
-        canvas.shelf(edgeShot, at: CGPoint(x: canvas.size.width - edgeShot.frame.width, y: 240))
-        canvas.shelf(foldedShot, at: CGPoint(x: canvas.size.width - foldedShot.frame.width, y: 90))
-        canvas.cursor(at: CGPoint(x: 822, y: 300))
+        canvas.fileWindow(DocumentsWindow.rect.offsetBy(dx: -10, dy: 0), title: "書類", files: DocumentsWindow.files)
+        canvas.shelf(floatingShot, at: CGPoint(x: 470, y: middle - floatingShot.frame.height / 2 + 20))
+        canvas.shelf(edgeShot, at: CGPoint(x: canvas.size.width - edgeShot.frame.width, y: middle - edgeShot.frame.height / 2 + 50))
+        canvas.shelf(foldedShot, at: CGPoint(x: canvas.size.width - foldedShot.frame.width, y: 60))
+        canvas.cursor(at: CGPoint(x: canvas.size.width - 50, y: middle + 40))
         canvas.menuBar()
         try writePNG(canvas.image(), named: "hero.png")
         await settle()
@@ -592,6 +611,7 @@ final class ReadmeImages {
 
         // 本物の棚で、帯 → 開く → 落とす → たたむ を写す
         let shelf = makeShelf(at: CGPoint(x: visible.maxX - 200, y: visible.midY), items: [])
+        shelf.state.dockedSize = CGSize(width: 200, height: 380)
         dockRight(shelf, centerY: visible.midY, unfolded: false)
         await settle()
         let tab = try capture(shelf)
@@ -609,7 +629,7 @@ final class ReadmeImages {
 
         // 架空のデスクトップの右端に、棚を置く
         let scene = GIFScene()
-        let shelfCenterY: CGFloat = 196
+        let shelfCenterY = ReadmeLayout.middleY
         /// 1 コマを描く（slide: 帯が画面の外から滑り込む進み具合（0〜1））
         func frame(cursor: CGPoint, shot: ShelfShot?, slide: CGFloat = 1, dragging: Bool, delay: Double) {
             scene.addFrame(cursor: cursor, dragging: dragging ? DocumentsWindow.dragged : nil, delay: delay) { canvas in
@@ -626,12 +646,12 @@ final class ReadmeImages {
         let start = DocumentsWindow.start
         frame(cursor: start, shot: nil, dragging: false, delay: 0.8)
         // 2. ドラッグし始めると、画面の端に帯が滑り込む
-        let approach = CGPoint(x: 470, y: shelfCenterY + 10)
+        let approach = CGPoint(x: scene.size.width - 260, y: shelfCenterY + 10)
         for step in 1...12 {
             frame(cursor: lerp(start, approach, CGFloat(step) / 12), shot: tab, slide: min(1, CGFloat(step) / 5), dragging: true, delay: 0.05)
         }
         // 3. 帯に近づくと、棚が開く
-        let inside = CGPoint(x: scene.size.width - 70, y: shelfCenterY + 6)
+        let inside = CGPoint(x: scene.size.width - 100, y: shelfCenterY + 6)
         let unfoldFrames = Array(unfolding.prefix(12))
         for (index, shot) in unfoldFrames.enumerated() {
             frame(cursor: lerp(approach, inside, CGFloat(index + 1) / CGFloat(unfoldFrames.count)), shot: shot, dragging: true, delay: 0.04)
@@ -640,7 +660,7 @@ final class ReadmeImages {
         // 4. 落とすと、棚に入る（元のファイルは動かない）
         frame(cursor: inside, shot: filled, dragging: false, delay: 1.0)
         // 5. 離れると、帯にたたむ（件数が出る）
-        let away = CGPoint(x: 400, y: shelfCenterY - 30)
+        let away = CGPoint(x: scene.size.width - 360, y: shelfCenterY - 40)
         for (index, shot) in folding.prefix(14).enumerated() {
             frame(cursor: lerp(inside, away, min(1, CGFloat(index + 1) / 6)), shot: shot, dragging: false, delay: 0.04)
         }
@@ -655,7 +675,7 @@ final class ReadmeImages {
         let visible = screen.visibleFrame
 
         // 本物の棚で、空の棚と、落としたあとの棚を写す
-        let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [], size: CGSize(width: 220, height: 170))
+        let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [], size: CGSize(width: 280, height: 260))
         shelf.show()
         await settle()
         let empty = try capture(shelf)
@@ -667,7 +687,7 @@ final class ReadmeImages {
 
         // 振る場所（棚は、ここを真ん中にして出る）
         let scene = GIFScene()
-        let shakeCenter = CGPoint(x: 470, y: 214)
+        let shakeCenter = CGPoint(x: scene.size.width - 270, y: ReadmeLayout.middleY)
         /// 1 コマを描く（appear: 棚が出てくる動きの進み具合（0〜1））
         func frame(cursor: CGPoint, shot: ShelfShot?, appear: CGFloat = 1, dragging: Bool, delay: Double) {
             scene.addFrame(cursor: cursor, dragging: dragging ? DocumentsWindow.dragged : nil, delay: delay) { canvas in
@@ -686,7 +706,7 @@ final class ReadmeImages {
             frame(cursor: lerp(start, shakeCenter, CGFloat(step) / 10), shot: nil, dragging: true, delay: 0.05)
         }
         // 3. 左右に軽く振る（折り返しの間を 2 コマで動かす）
-        let swings: [CGFloat] = [0, 32, -32, 32, -32, 24, 0]
+        let swings: [CGFloat] = [0, 40, -40, 40, -40, 30, 0]
         for (from, to) in zip(swings, swings.dropFirst()) {
             for step in 1...2 {
                 let x = from + (to - from) * CGFloat(step) / 2
@@ -701,7 +721,7 @@ final class ReadmeImages {
         // 5. 落とすと、棚に入る（元のファイルは動かない）
         frame(cursor: shakeCenter, shot: filled, dragging: false, delay: 0.9)
         // 6. カーソルを離す
-        let away = CGPoint(x: shakeCenter.x - 40, y: 70)
+        let away = CGPoint(x: shakeCenter.x - 60, y: ReadmeLayout.middleY - 200)
         for step in 1...6 {
             frame(cursor: lerp(shakeCenter, away, CGFloat(step) / 6), shot: filled, dragging: false, delay: 0.04)
         }
@@ -717,7 +737,7 @@ final class ReadmeImages {
         let dragged = Sample.proposal
 
         // 本物の棚で、取り出す前と、取り出して外れたあとを写す
-        let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [dragged, Sample.estimate], size: CGSize(width: 240, height: 190))
+        let shelf = makeShelf(at: CGPoint(x: visible.midX, y: visible.midY), items: [dragged, Sample.estimate], size: CGSize(width: 300, height: 300))
         shelf.show()
         await settle()
         let full = try capture(shelf)
@@ -732,8 +752,8 @@ final class ReadmeImages {
 
         // 左に棚、右に落とす先のフォルダのウィンドウを置く
         let scene = GIFScene()
-        let shelfOrigin = CGPoint(x: 44, y: 116)
-        let folder = CGRect(x: 334, y: 96, width: 270, height: 230)
+        let shelfOrigin = CGPoint(x: 100, y: ReadmeLayout.middleY - full.frame.height / 2)
+        let folder = CGRect(x: 510, y: ReadmeLayout.middleY - 200, width: 380, height: 400)
         /// 1 コマを描く（dropped: フォルダに移ったあとか）
         func frame(cursor: CGPoint, dropped: Bool, dragging: Bool, delay: Double) {
             scene.addFrame(cursor: cursor, dragging: dragging ? dragged : nil, delay: delay) { canvas in
@@ -754,7 +774,7 @@ final class ReadmeImages {
         // 3. 落とすと、フォルダに移り、棚から外れる
         frame(cursor: drop, dropped: true, dragging: false, delay: 0.6)
         // 4. カーソルを離す
-        let away = CGPoint(x: drop.x + 30, y: 70)
+        let away = CGPoint(x: drop.x + 40, y: ReadmeLayout.middleY - 240)
         for point in path(from: drop, to: away, steps: 6) {
             frame(cursor: point, dropped: true, dragging: false, delay: 0.04)
         }
@@ -779,6 +799,8 @@ final class ReadmeImages {
         let listHidden: CGImage
         /// 一覧の中身の大きさ
         let listSize: CGSize
+        /// 一覧で、この棚（あとで送る）が何行目か（0 から）
+        let shelfRow: Int
     }
 
     /// 本物の棚とお気に入り一覧を出して、お気に入りにする前・したあと・閉じたあとを写す
@@ -786,7 +808,7 @@ final class ReadmeImages {
         let visible = screen.visibleFrame
         let shelf = makeShelf(
             at: CGPoint(x: visible.midX - 220, y: visible.midY), items: [Sample.photo, Sample.memo],
-            size: CGSize(width: 250, height: 190), name: "あとで送る", color: .orange
+            size: CGSize(width: 290, height: 300), name: "あとで送る", color: .orange
         )
         shelf.show()
         let list = FavoriteShelvesList()
@@ -807,6 +829,8 @@ final class ReadmeImages {
         let others = [
             FavoriteShelfEntry(id: UUID(), title: "デザイン素材", color: .purple, count: 8, isVisible: false),
             FavoriteShelfEntry(id: UUID(), title: "請求書の控え", color: .green, count: 3, isVisible: false),
+            FavoriteShelfEntry(id: UUID(), title: "旅行の写真", color: .blue, count: 12, isVisible: false),
+            FavoriteShelfEntry(id: UUID(), title: "週次レポート", color: .gray, count: 4, isVisible: false),
         ]
         func entry(isVisible: Bool) -> FavoriteShelfEntry {
             FavoriteShelfEntry(id: shelf.id, title: "あとで送る", color: .orange, count: 2, isVisible: isVisible)
@@ -823,7 +847,8 @@ final class ReadmeImages {
             listBefore: listBefore,
             listShown: try await captureList(others + [entry(isVisible: true)]),
             listHidden: try await captureList(others + [entry(isVisible: false)]),
-            listSize: listView.bounds.size
+            listSize: listView.bounds.size,
+            shelfRow: others.count
         )
     }
 
@@ -832,11 +857,13 @@ final class ReadmeImages {
         await settle()
 
         // メニューバーの下の真ん中に、棚と一覧の高さをそろえて並べる
-        let scene = GIFScene(size: CGSize(width: 800, height: 340))
-        let middle = (scene.size.height - GIFScene.menuBarHeight) / 2
-        let shelfOrigin = CGPoint(x: 70, y: middle - shots.plain.frame.height / 2)
+        let scene = GIFScene()
+        let middle = ReadmeLayout.middleY
+        let shelfOrigin = CGPoint(x: 90, y: middle - shots.plain.frame.height / 2)
         let windowHeight = shots.listSize.height + Canvas.titleBarHeight
-        let windowRect = CGRect(x: 400, y: middle - windowHeight / 2, width: shots.listSize.width, height: windowHeight)
+        let windowRect = CGRect(
+            x: scene.size.width - 90 - shots.listSize.width, y: middle - windowHeight / 2, width: shots.listSize.width, height: windowHeight
+        )
         /// 1 コマを描く（shot: 棚、presence: 棚の出ている具合（0〜1）、list: 一覧の中身）
         func frame(cursor: CGPoint, shot: ShelfShot?, presence: CGFloat = 1, list: CGImage, clicking: Bool = false, delay: Double) {
             scene.addFrame(cursor: cursor, clicking: clicking, delay: delay) { canvas in
@@ -845,11 +872,11 @@ final class ReadmeImages {
             }
         }
 
-        let rest = CGPoint(x: shelfOrigin.x + 160, y: shelfOrigin.y + 50)
+        let rest = CGPoint(x: shelfOrigin.x + 180, y: shelfOrigin.y + 60)
         let star = shots.plain.center(of: .favorite, placedAt: shelfOrigin)
         let close = shots.plain.center(of: .close, placedAt: shelfOrigin)
-        // 一覧の 3 行目（あとで送る）の「出す」ボタン（一覧の行は、上の余白 31pt から 42pt おきに並ぶ）
-        let showButton = CGPoint(x: windowRect.maxX - 36, y: windowRect.maxY - Canvas.titleBarHeight - 31 - 42 * 2)
+        // 一覧の「あとで送る」の行の「出す」ボタン（一覧の行は、上の余白 31pt から 42pt おきに並ぶ）
+        let showButton = CGPoint(x: windowRect.maxX - 36, y: windowRect.maxY - Canvas.titleBarHeight - 31 - 42 * CGFloat(shots.shelfRow))
 
         // 1. まだお気に入りではない棚（☆）と、お気に入り一覧
         frame(cursor: rest, shot: shots.plain, list: shots.listBefore, delay: 0.8)
@@ -896,10 +923,11 @@ final class ReadmeImages {
         let window = NSWindow(contentViewController: controller)
         window.styleMask = [.titled, .closable, .resizable]
         window.title = "お気に入り一覧"
-        // 高さは一覧の最小（これより低いと、下の説明が切れる）
-        let size = NSSize(width: 340, height: 200)
+        // 5 行が入り、下の説明が切れない高さ（棚と同じくらいの高さにそろえる）
+        let size = NSSize(width: 400, height: 320)
         window.setContentSize(size)
         window.setFrameOrigin(CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2))
+        window.setFrame(awayFromPointer(window.frame), display: false)
         window.ignoresMouseEvents = true
         window.orderFrontRegardless()
         return window
