@@ -129,12 +129,30 @@ extension ShelfController {
     /// 開いた棚を帯にたたむ（見出しの › ボタン・ポインタが離れたとき）
     ///
     /// 空になった画面端の棚は、帯を残さずに閉じる（次のドラッグで、また端に出る）。
-    /// 落としたものを読み込んでいる途中は、空に見えても閉じない。
     func foldOrClose() {
-        if state.isEdgeShelf, model.isEmpty, model.isSettled, !state.isFavorite {
+        if isEmptyEdgeShelf {
             close()
         } else {
             fold()
+        }
+    }
+
+    /// 空になったので、閉じてよい画面端の棚か（落としたものを読み込んでいる途中は、空に見えても閉じない。お気に入りの棚は、空でも残す）
+    var isEmptyEdgeShelf: Bool {
+        state.isEdgeShelf && model.isEmpty && model.isSettled && !state.isFavorite
+    }
+
+    /// 中身が変わった: 画面の端で開いたままにしている棚も、空になったら閉じる
+    ///
+    /// 開いたままにしていない棚と同じく、ポインタが棚の上にあるうちは閉じず、離れたら閉じる（すでに離れていれば、すぐに閉じる）。
+    /// 開いたままにしていない棚は、ポインタが離れて帯にたたむときに閉じる（foldOrClose）。
+    func contentsDidChange() {
+        guard state.keepsOpen, state.isDocked, !isHidden, !isUnfoldedByDrag, isEmptyEdgeShelf else { return }
+        if state.isUnfolded, panel.frame.contains(NSEvent.mouseLocation) {
+            // 離れる前に中身が戻ったら（⌘Z・落とした）、見張りをやめる
+            watchPointer(while: { $0.isEmptyEdgeShelf }, onLeave: { $0.close() })
+        } else {
+            close()
         }
     }
 
@@ -164,19 +182,34 @@ extension ShelfController {
             pointerWatcher.stop()
             return
         }
+        watchPointer(waitForEntry: waitForEntry, onLeave: { $0.foldOrClose() })
+    }
+
+    /// 開いた画面の端の棚から、ポインタが離れるのを見張る
+    /// - Parameters:
+    ///   - condition: 画面の端で開いている（ドラッグで開いたのではない）ことに加えて、見張り続ける条件。false になったら見張りをやめる
+    ///   - onLeave: 離れたとき
+    private func watchPointer(
+        waitForEntry: Bool = false,
+        while condition: @escaping (ShelfController) -> Bool = { _ in true },
+        onLeave: @escaping (ShelfController) -> Void
+    ) {
         pointerWatcher.start(
             waitForEntry: waitForEntry,
             frame: { [weak self] in self?.panel.frame ?? .zero },
             isActive: { [weak self] in
                 guard let self else { return false }
-                return self.state.isDocked && self.state.isUnfolded && !self.isUnfoldedByDrag
+                return self.state.isDocked && self.state.isUnfolded && !self.isUnfoldedByDrag && condition(self)
             },
-            // Quick Look で見ている間・名前を入力している間は引っ込めない
+            // Quick Look で見ている間・名前を入力している間・大きさを変えている間は、離れても何もしない
             defersFolding: { [weak self] in
                 guard let self else { return false }
                 return self.previewSource.isShowing || self.state.isRenaming || self.state.isResizing
             },
-            onLeave: { [weak self] in self?.foldOrClose() }
+            onLeave: { [weak self] in
+                guard let self else { return }
+                onLeave(self)
+            }
         )
     }
 

@@ -140,7 +140,8 @@ final class AppCoordinator {
         shelf.occupiedTabRanges = { [weak self] shelf, edge, screen in
             self?.occupiedTabRanges(excluding: shelf, edge: edge, screen: screen) ?? []
         }
-        shelf.model.onChange = { [weak self] in
+        shelf.model.onChange = { [weak self, weak shelf] in
+            shelf?.contentsDidChange()
             self?.shelvesDidChange()
         }
         shelf.onOpenSettings = { [weak self] in
