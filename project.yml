@@ -69,9 +69,9 @@ targets:
         SUFeedURL: https://raw.githubusercontent.com/yzanbo/pinshelf/main/appcast.xml
         # 更新ファイルの署名を確かめる公開鍵（make update-key が書き込む。空のあいだは、更新の機能を出さない）
         SUPublicEDKey: "fIyKq+2V6b4ohDcJu6T86VEbZV01mUdv7mWw5IE7cpY="
-        # 新しい版を自動で確かめる（1 日に 1 回。設定の「一般」で切れる）
+        # 新しい版を自動で確かめる（1 時間に 1 回。Sparkle が受け付けるいちばん短い間隔。VS Code と同じ間隔。設定の「一般」で切れる）
         SUEnableAutomaticChecks: true
-        SUScheduledCheckInterval: 86400
+        SUScheduledCheckInterval: 3600
         # サンドボックスの中からは自分を入れ替えられないので、Sparkle の入れ替え役（XPC サービス）に任せる
         SUEnableInstallerLauncherService: true
     entitlements:
