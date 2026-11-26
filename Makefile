@@ -15,8 +15,7 @@ DIST_ZIP := $(DIST_BASE).zip
 DIST_DMG := $(DIST_BASE).dmg
 
 # 「Pinshelf Dev」の証明書があればそれで署名する（なければその場の署名＝アドホック署名）。
-# 毎回同じ証明書で署名すると、ビルドし直しても macOS から同じアプリと見なされ、
-# 棚のファイルのブックマークやサンドボックスの保存場所をそのまま使える（make cert で一度だけ作る）
+# 毎回同じ証明書で署名すると、ビルドし直しても同じ署名になる（make cert で一度だけ作る。なくても困らない: docs/ARCHITECTURE.md の「署名」）
 SIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q '"Pinshelf Dev"' && echo "Pinshelf Dev" || echo "-")
 # Launch Services（アプリの場所とアイコンを覚えている macOS の仕組み）に、アプリを登録し直す道具。
 # アイコンを変えたあとも Finder・Dock が前のアイコン（アイコンを入れる前の仮のもの）を出し続けないよう、起動・インストールの前に使う
@@ -29,14 +28,46 @@ XCODEBUILD_FLAGS ?=
 XCODEBUILD := xcodebuild -project Pinshelf.xcodeproj -scheme Pinshelf -sdk macosx \
 	-derivedDataPath $(DERIVED_DATA) CODE_SIGN_IDENTITY="$(SIGN_IDENTITY)" $(XCODEBUILD_FLAGS)
 
-.PHONY: generate build release dist publish run stop install uninstall test clean cert icon readme-images
+# 更新の仕組み（Sparkle）。公式の配布物を取り寄せて Vendor/Sparkle に置く（リポジトリには入れない）。
+# 版を上げるときは、SPARKLE_VERSION と SPARKLE_SHA256（配布物 Sparkle-版.tar.xz の SHA-256）を一緒に変える
+SPARKLE_VERSION := 2.10.1
+SPARKLE_SHA256 := 1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
+SPARKLE_DIR := Vendor/Sparkle
+SPARKLE_BIN := $(SPARKLE_DIR)/bin
+# 取り寄せた版の印（版を上げると名前が変わり、取り寄せ直す）
+SPARKLE_STAMP := $(SPARKLE_DIR)/.version-$(SPARKLE_VERSION)
+# 更新ファイルの署名を確かめる公開鍵（project.yml の SUPublicEDKey。make update-key が書き込む）
+UPDATE_PUBLIC_KEY := $(shell sed -n 's/^ *SUPublicEDKey: *"\(.*\)"/\1/p' project.yml)
+# 配る更新ファイル（zip）を置く場所。版の一覧（appcast.xml）の中のダウンロード元になる
+RELEASE_DOWNLOAD_URL := https://github.com/yzanbo/pinshelf/releases/download/v$(RELEASE_NAME)/
+
+.PHONY: generate build release dist publish publish-check run stop install uninstall test clean cert icon readme-images \
+	sparkle update-key update-test update-test-log
 
 # アイコンを描くスクリプトをビルドする場所
 ICON_TOOL_DIR := $(DERIVED_DATA)/icon-tool
 
 # project.yml から Pinshelf.xcodeproj を作る（ファイルを足したときも、これで入る）
-generate:
+generate: $(SPARKLE_STAMP)
 	xcodegen generate
+
+# Sparkle（更新の仕組み）を取り寄せる。ビルドの前に自動で行うので、ふだんは自分で呼ばなくてよい。
+# 取り寄せたファイルは、決めてある SHA-256 と合うことを確かめてから使う（合わなければ止まる）
+sparkle: $(SPARKLE_STAMP)
+
+$(SPARKLE_STAMP):
+	rm -rf "$(SPARKLE_DIR)"
+	mkdir -p "$(SPARKLE_DIR)"
+	curl -fsSL -o "$(SPARKLE_DIR)/Sparkle.tar.xz" \
+		"https://github.com/sparkle-project/Sparkle/releases/download/$(SPARKLE_VERSION)/Sparkle-$(SPARKLE_VERSION).tar.xz"
+	echo "$(SPARKLE_SHA256)  $(SPARKLE_DIR)/Sparkle.tar.xz" | shasum -a 256 -c -
+	@# 使うものだけ取り出す: アプリに入れるフレームワーク・署名と版の一覧の道具・ライセンス
+	tar -xJf "$(SPARKLE_DIR)/Sparkle.tar.xz" -C "$(SPARKLE_DIR)" ./Sparkle.framework ./bin ./LICENSE
+	rm "$(SPARKLE_DIR)/Sparkle.tar.xz"
+	@# Sparkle のライセンスは、配るものに全文を含める決まりなので、アプリに同梱するファイルへ写す（リポジトリに入れる）
+	mkdir -p Pinshelf/Licenses
+	cp "$(SPARKLE_DIR)/LICENSE" Pinshelf/Licenses/Sparkle.txt
+	touch "$@"
 
 # 開発用（Debug）にビルドする
 build: generate
@@ -50,7 +81,8 @@ release: generate
 
 # GitHub の Releases に置く DMG と zip を作る（dist/Pinshelf-版.dmg・.zip・.sha256）。
 # DMG は、開くと Pinshelf.app とアプリケーションフォルダが並び、ドラッグで入れられる形にする。
-# 自己署名の証明書はほかの Mac では意味がないので、配る版はいつもアドホック署名にする（Pinshot と同じ）
+# 配る版は、いつもアドホック署名にする（アドホック署名どうしなら、更新しても保存場所・棚のファイル・
+# 「ログイン時に起動」が引き継がれることを確かめてある: docs/ARCHITECTURE.md の「更新」）
 dist:
 	$(MAKE) release SIGN_IDENTITY=-
 	mkdir -p dist
@@ -73,12 +105,43 @@ dist:
 
 # DMG と zip を作り、GitHub に Release（タグ v版）を作ってアップロードする（GitHub CLI を使う）。
 # 説明は「この版の変更」（scripts/release-changes.md。出すたびに書き直す）と「ダウンロードと開き方」をつなげる。
-# β 版のときは、説明の先頭に β 版の注意を付け、プレリリースにする
-publish: dist
+# β 版のときは、説明の先頭に β 版の注意を付け、プレリリースにする。
+#
+# 入れてもらったアプリに更新を届けるため、zip に EdDSA の鍵で署名して、版の一覧（appcast.xml）を作り直す。
+# Release を作ったあと、appcast.xml だけをコミットしてプッシュする（アプリは、main の appcast.xml を見て新しい版を知る）
+publish: publish-check dist
 	( $(if $(BETA),cat scripts/release-notes-beta.md; echo;) cat scripts/release-changes.md; echo; cat scripts/release-notes.md ) > dist/release-notes.md
+	./scripts/make-appcast.sh "$(DIST_ZIP)" scripts/release-changes.md "$(RELEASE_DOWNLOAD_URL)" appcast.xml
 	gh release create "v$(RELEASE_NAME)" "$(DIST_DMG)" "$(DIST_ZIP)" "$(DIST_BASE).sha256" \
 		--target main --title "Pinshelf $(RELEASE_NAME)$(if $(BETA), (β 版))" $(if $(BETA),--prerelease) \
 		--notes-file dist/release-notes.md
+	git add appcast.xml
+	git commit -q -m "chore: 版の一覧（appcast）を $(RELEASE_NAME) にする" -- appcast.xml
+	git push origin main
+	@echo ""
+	@echo "$(RELEASE_NAME) を公開しました。入れてもらったアプリには、appcast.xml を通して新しい版が届きます。"
+
+# 公開の前に確かめる（そろっていなければ、何も作らずに止める）
+# - 更新ファイルに署名する鍵があり、アプリに入れる公開鍵（project.yml）と合っている（合わない鍵で署名すると、更新が届かなくなる）
+# - コミットしていない変更がなく、GitHub の main と同じ（Release のタグは GitHub の main に付き、appcast.xml のプッシュで手元の main も送るため）
+publish-check: $(SPARKLE_STAMP)
+	./scripts/publish-check.sh "$(UPDATE_PUBLIC_KEY)"
+
+# 更新ファイルの署名に使う鍵（EdDSA）を用意して、公開鍵を project.yml に書き込む（最初の 1 回だけ）。
+# 秘密鍵は、この Mac のログインキーチェーンに入る（途中で、キーチェーンへのアクセスを聞かれたら許可する）
+update-key: $(SPARKLE_STAMP)
+	./scripts/update-key.sh
+
+# 更新を、手元で通しで試す（docs/TESTING.md の「更新を通しで試す」）。
+# ふだんの Pinshelf とは別の ID の試験用アプリを 2 つの版で作り、新しい版を手元のサーバーから配る（止めるときは control + C）
+update-test: generate
+	./scripts/update-test.sh $(XCODEBUILD_FLAGS)
+
+# 更新の試験のあいだの macOS の記録を、build/update-test/system.log に書き出す
+# （確認の画面が出たかの裏取りと、うまくいかないときの手がかりに使う）。
+# いつからの記録かは SINCE="2026-11-26 19:50:00" のように渡す（なければ、直近 30 分）
+update-test-log:
+	./scripts/update-test-log.sh
 
 # 動いている Pinshelf を終了してから、ビルドした新しい版を起動する。
 # 終了した直後は、Launch Services がまだ「動いている」と思っていて、open が
@@ -113,7 +176,7 @@ test:
 	cd PinshelfCore && swift test $(SWIFT_TEST_FLAGS)
 
 clean:
-	rm -rf $(DERIVED_DATA) PinshelfCore/.build
+	rm -rf $(DERIVED_DATA) PinshelfCore/.build build/update-test
 
 # アプリのアイコンを描き直す（scripts/make-app-icon.swift を変えたとき。Pinshelf/Assets.xcassets に書き出す）
 icon:
@@ -139,8 +202,8 @@ readme-images:
 		-target $(SWIFT_TARGET) -module-cache-path "$(README_TOOL_DIR)/module-cache" $(SWIFTC_FLAGS) \
 		-emit-module-path "$(README_TOOL_DIR)/PinshelfCore.swiftmodule" -o "$(README_TOOL_DIR)/libPinshelfCore.a" \
 		PinshelfCore/Sources/PinshelfCore/*.swift
-	@# アプリのコード（入口の AppDelegate を除く）と、画像を作るプログラムを一緒にビルドする（アプリと同じ設定で）
-	find Pinshelf -name '*.swift' ! -name AppDelegate.swift > "$(README_TOOL_DIR)/sources.txt"
+	@# アプリのコード（入口の AppDelegate と、Sparkle を読み込む SparkleUpdater を除く）と、画像を作るプログラムを一緒にビルドする（アプリと同じ設定で）
+	find Pinshelf -name '*.swift' ! -name AppDelegate.swift ! -name SparkleUpdater.swift > "$(README_TOOL_DIR)/sources.txt"
 	echo scripts/readme-images/main.swift >> "$(README_TOOL_DIR)/sources.txt"
 	xcrun swiftc -swift-version 6 -target $(SWIFT_TARGET) -default-isolation MainActor \
 		-enable-upcoming-feature NonisolatedNonsendingByDefault -enable-upcoming-feature InferIsolatedConformances \
