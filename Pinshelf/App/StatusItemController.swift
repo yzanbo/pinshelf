@@ -5,7 +5,7 @@ import PinshelfCore
 ///
 /// - 押すとメニューを出す（新しい棚を開く・画面端の棚を開く・最近閉じた棚・お気に入り・設定・アップデートを確認・終了）
 /// - ファイル・テキスト・リンクを落とすと、棚に入れる（入れ先は設定で選ぶ）
-/// - 自動で新しい版を見つけたら、アイコンの右上に小さな丸を付け、メニューのいちばん上で知らせる
+/// - 新しい版を見つけたら、アイコンを右下に下向きの矢印の丸が入ったものに替え、メニューのいちばん上で知らせる
 ///
 /// アイコンのウィンドウにドラッグの種類を登録し、そのウィンドウの delegate としてドロップを受け取る
 /// （NSWindow は、自分に届いたドラッグをこの delegate に回す）。
@@ -37,8 +37,10 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     /// 更新の状態（新しい版の知らせ・「アップデートを確認…」）
     private let updates: AppUpdates
-    /// 新しい版があるときに、アイコンの右上に出す小さな丸
-    private let updateBadge = UpdateBadgeView()
+    /// ふだんのアイコン
+    private let normalIcon = AppIcon.symbol(accessibilityDescription: "Pinshelf")
+    /// 新しい版があるときのアイコン（右下に下向きの矢印の丸）
+    private let updateIcon = AppIcon.symbolWithUpdateBadge(accessibilityDescription: "Pinshelf（新しいバージョンがあります）")
 
     private static let toolTip = "Pinshelf（ここにドロップすると棚に入れます）"
 
@@ -47,9 +49,8 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
         super.init()
         if let button = statusItem.button {
             // アプリのアイコンと同じ絵の、1 色の印（テンプレート画像）
-            button.image = AppIcon.symbol(accessibilityDescription: "Pinshelf")
+            button.image = normalIcon
             button.toolTip = Self.toolTip
-            installUpdateBadge(on: button)
         }
         updates.onPendingVersionChange = { [weak self] version in
             self?.showPendingUpdate(version)
@@ -143,22 +144,9 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
 
     // MARK: - 新しい版の知らせ
 
-    /// アイコンの右上に、小さな丸を置く（ふだんは隠しておく）
-    private func installUpdateBadge(on button: NSStatusBarButton) {
-        updateBadge.isHidden = true
-        updateBadge.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(updateBadge)
-        NSLayoutConstraint.activate([
-            updateBadge.widthAnchor.constraint(equalToConstant: UpdateBadgeView.diameter),
-            updateBadge.heightAnchor.constraint(equalToConstant: UpdateBadgeView.diameter),
-            updateBadge.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -2),
-            updateBadge.topAnchor.constraint(equalTo: button.topAnchor, constant: 3),
-        ])
-    }
-
-    /// 知らせる新しい版があれば丸を出し、なければ隠す
+    /// 知らせる新しい版があれば、矢印の入ったアイコンに替え、なければふだんのアイコンに戻す
     private func showPendingUpdate(_ version: String?) {
-        updateBadge.isHidden = version == nil
+        statusItem.button?.image = version == nil ? normalIcon : updateIcon
         statusItem.button?.toolTip = version.map { "Pinshelf（新しいバージョン \($0) があります）" } ?? Self.toolTip
     }
 
@@ -256,18 +244,4 @@ final class StatusItemController: NSObject, NSWindowDelegate, NSDraggingDestinat
     func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
         statusItem.button?.highlight(false)
     }
-}
-
-/// 新しい版があるときに、メニューバーのアイコンの右上に出す小さな丸
-private final class UpdateBadgeView: NSView {
-    static let diameter: CGFloat = 6
-
-    override func draw(_ dirtyRect: NSRect) {
-        // 色は描くたびに決める（外観やアクセントカラーが変わっても合うように）
-        NSColor.controlAccentColor.setFill()
-        NSBezierPath(ovalIn: bounds).fill()
-    }
-
-    /// アイコンのクリックとドロップを邪魔しない
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -2,7 +2,7 @@
 # 更新を、手元で通しで試す準備をする（make update-test。手順は docs/TESTING.md の「更新を通しで試す」）。
 #
 # ふだんの Pinshelf とは別の ID・別の名前（PinshelfUpdateTest）の試験用アプリを、古い版と新しい版の 2 つ作り、
-# 新しい版を手元のサーバー（http://localhost:8765）から配る。古い版を開くと、Sparkle が新しい版を見つけて入れ替える。
+# 新しい版を手元のサーバー（http://localhost:8765。ポートは UPDATE_TEST_PORT で替えられる）から配る。古い版を開くと、Sparkle が新しい版を見つけて入れ替える。
 #
 # 古い版の開き方は 2 通り:
 # - 手早く: 手元でビルドしたもの（build/update-test/old）を、そのまま開く
@@ -17,12 +17,14 @@
 #   環境変数 SIGN_IDENTITY: アプリの署名に使う証明書の名前（make update-test SIGN_IDENTITY="Pinshelf Dev" のように渡す）。
 #     なければ、アドホック署名。証明書で署名するときは、ID と名前の後ろに Signed を付ける
 #     （macOS は、サンドボックスの保存場所をアプリの署名にひも付けるので、署名のやり方ごとに保存場所を分ける）
+#   環境変数 UPDATE_TEST_PORT: 手元のサーバーのポート（なければ 8765）。試験用アプリの中にも書き込むので、ビルドの前に決める
 #   環境変数 NO_SERVER=1: アプリと版の一覧を作るだけで、サーバーは動かさない
 #
 # 変数のすぐ後ろに全角の文字を続けるときは、${NAME} と波かっこで囲む（create-dev-cert.sh と同じ理由）。
 set -euo pipefail
 
-PORT=8765
+# 手元のサーバーのポート。Pin シリーズの更新の試験どうしでぶつからないよう、アプリごとに分ける（Pinshot は 8766、Pinstage は 8767）
+PORT="${UPDATE_TEST_PORT:-8765}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 if [ "${SIGN_IDENTITY}" = "-" ]; then
   SUFFIX=""
@@ -49,6 +51,27 @@ for id in app.pinshelf.UpdateTest app.pinshelf.UpdateTestSigned; do
     exit 1
   fi
 done
+
+# サーバーを動かせるか（ポートが空いているか）を、ビルドの前に確かめる（ビルドには数分かかるので、作り終えてから止まらないように）。
+# サーバーと同じく 127.0.0.1 のそのポートで受け口を開いてみて、開けなければ止める
+check_port() {
+  python3 - "$1" <<'PY'
+import socket, sys
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    sock.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError as error:
+    sys.exit(error.strerror)
+PY
+}
+if [ "${NO_SERVER:-}" != "1" ] && ! PORT_ERROR="$(check_port "${PORT}" 2>&1)"; then
+  echo "手元のサーバーを、ポート ${PORT} で動かせません（${PORT_ERROR}）。" >&2
+  echo "Address already in use なら、ほかのものがそのポートを使っています（前に流した試験のサーバーが、別のターミナルで動いたままのことが多い）。" >&2
+  echo "何が使っているかは、別のターミナルで  lsof -nP -iTCP:${PORT} -sTCP:LISTEN  を流すと分かります。" >&2
+  echo "それを止めてから流し直すか、make update-test UPDATE_TEST_PORT=8800 のように、空いているポートを渡してください。" >&2
+  exit 1
+fi
 
 # プロジェクトが「書類」などの中にあると、手元でビルドした古い版を入れ替えるときに、macOS がそのフォルダへのアクセスを確かめる
 # （入れ替えの部品が、そのフォルダの中のアプリを書き換えるため。配る版はアプリケーションフォルダに置くので、出ない）
@@ -81,13 +104,12 @@ echo "${KEYS}" | sed -n 1p > "${KEY_FILE}"
 PUBLIC_KEY="$(echo "${KEYS}" | sed -n 2p)"
 
 # 試験用の Info.plist を作る（名前・版・配信元・公開鍵を差し替え、手元のサーバーから読めるようにする）。
-# 自動で確かめる間隔は、Sparkle が受け付けるいちばん短い 1 時間にする（続けて試すときも、丸の知らせを見られるように）
+# 自動で確かめる間隔は、配る版と同じ 1 時間（Info.plist のまま。Sparkle が受け付けるいちばん短い間隔）
 make_plist() {
   local output="$1" build="$2" version="$3"
   cp Pinshelf/Info.plist "${output}"
   "${PLIST_BUDDY}" \
     -c "Set :CFBundleDisplayName ${TEST_NAME}" \
-    -c "Set :SUScheduledCheckInterval 3600" \
     -c "Set :CFBundleVersion ${build}" \
     -c "Set :CFBundleShortVersionString ${version}" \
     -c "Set :SUFeedURL http://localhost:${PORT}/appcast.xml" \
@@ -155,12 +177,15 @@ cat <<EOF
 ■ 手早く試す（手元でビルドした古い版から更新する）
   1. 別のターミナルで、古い版を開く:  open "${OLD_APP}"
   2. 棚にファイルを 1 つ置き、設定の「一般」で「ログイン時に起動」をオンにする
-  3. メニューバーのアイコンに小さな丸が付き、メニューのいちばん上に「新しいバージョン ${NEW_VERSION} があります…」と出る。
-     それを選ぶ →「アップデートをインストール」→ ダウンロードのあと「インストールして再起動」
-     （丸は、前に確かめてから 1 時間たっていないと付かない。そのときは、メニューの「アップデートを確認…」で進める）
-${FOLDER_NOTE}  4. 入れ替わって開き直したら、次を確かめる:
+  3. メニューバーのアイコンの右下に下向きの矢印の印が付き、メニューのいちばん上に「新しいバージョン ${NEW_VERSION} があります…」と出る。
+     （印は、前に確かめてから 1 時間たっていないと付かない。そのときは、メニューの「アップデートを確認…」で進める）
+     印が消えないことを確かめる: それを選び、更新の画面を「あとで通知」で閉じても、印が残るか。
+     メニューの「Pinshelf を終了」で終了して、もう一度開いても、印が残るか
+  4. もう一度「新しいバージョン ${NEW_VERSION} があります…」を選ぶ →「アップデートをインストール」→ ダウンロードのあと「インストールして再起動」
+${FOLDER_NOTE}  5. 入れ替わって開き直したら、次を確かめる:
      - 開き直すときに、macOS の確認の画面が出ないか（出たら、押す前にスクリーンショットを撮っておく）
      - 設定の「一般」のバージョンが ${NEW_VERSION} になっているか
+     - アイコンの矢印の印が消え、ふだんのアイコンに戻っているか
      - 棚のファイルが残っていて、開けるか（スペースキーの Quick Look・ダブルクリック）
      - 「ログイン時に起動」がオンのままか
 
@@ -174,7 +199,7 @@ ${FOLDER_NOTE}  4. 入れ替わって開き直したら、次を確かめる:
      （ここでは、ターミナルの xattr -d では開かない。ダウンロードの印を付けたまま試すため）
      止められずにそのまま開いたときは、そのまま進めてよい（この Mac で一度開いたことのある版は、止められないことがある。
      あとから xattr で印を付けると、別の場所に写して動かす扱い（App Translocation）になり、更新できなくなるので、付けない）
-  4. あとは「手早く試す」の 2〜4 と同じ
+  4. あとは「手早く試す」の 2〜5 と同じ
 
 終わったら:
   - 設定の「一般」で「ログイン時に起動」をオフに戻してから、試験用の Pinshelf を終了する

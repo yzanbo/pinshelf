@@ -40,6 +40,9 @@ SPARKLE_STAMP := $(SPARKLE_DIR)/.version-$(SPARKLE_VERSION)
 UPDATE_PUBLIC_KEY := $(shell sed -n 's/^ *SUPublicEDKey: *"\(.*\)"/\1/p' project.yml)
 # 配る更新ファイル（zip）を置く場所。版の一覧（appcast.xml）の中のダウンロード元になる
 RELEASE_DOWNLOAD_URL := https://github.com/yzanbo/pinshelf/releases/download/v$(RELEASE_NAME)/
+# 更新の試験で、新しい版を配る手元のサーバーのポート（Pin シリーズの試験どうしでぶつからないよう、Pinshot は 8766、Pinstage は 8767）。
+# ほかで使っているときは make update-test UPDATE_TEST_PORT=8800 のように替える
+UPDATE_TEST_PORT ?= 8765
 
 .PHONY: generate build release dist publish publish-check run stop install uninstall test clean cert icon readme-images \
 	sparkle update-key update-test update-test-log
@@ -136,7 +139,7 @@ update-key: $(SPARKLE_STAMP)
 # 更新を、手元で通しで試す（docs/TESTING.md の「更新を通しで試す」）。
 # ふだんの Pinshelf とは別の ID の試験用アプリを 2 つの版で作り、新しい版を手元のサーバーから配る（止めるときは control + C）
 update-test: generate
-	./scripts/update-test.sh $(XCODEBUILD_FLAGS)
+	UPDATE_TEST_PORT="$(UPDATE_TEST_PORT)" ./scripts/update-test.sh $(XCODEBUILD_FLAGS)
 
 # 更新の試験のあいだの macOS の記録を、build/update-test/system.log に書き出す
 # （確認の画面が出たかの裏取りと、うまくいかないときの手がかりに使う）。
