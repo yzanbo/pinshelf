@@ -3,22 +3,27 @@
     <channel>
         <title>Pinshelf</title>
         <item>
-            <title>0.3.1</title>
-            <pubDate>Thu, 26 Nov 2026 22:03:00 +0900</pubDate>
+            <title>0.3.2</title>
+            <pubDate>Fri, 27 Nov 2026 02:38:01 +0900</pubDate>
             <link>https://github.com/yzanbo/pinshelf</link>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## この版の主な変更（0.3.0-beta.1 から）
+            <description sparkle:format="markdown"><![CDATA[## この版の主な変更（0.3.1-beta.1 から）
 
+
+### 変わったこと
+
+- 新しい版があるときの、メニューバーのアイコンの印を、目立つ形にしました。アイコンの右下に、下向きの矢印の印が入ります（前は、右上の小さな青い丸でした）
+- 新しい版を確かめる間隔を、1 日に 1 回から 1 時間に 1 回にしました
 
 ### 直したこと
 
-- 「アップデートを確認…」を選んだときに、「アップデートを確認中…」の小窓が一瞬で閉じ、画面がちらついて見えたのを直しました。小窓は、少なくとも 0.5 秒は出てから結果に替わります
+- 新しい版の印が、更新していないのに消え、そのまま消えたままになることがあったのを直しました。印は、新しい版を入れるか「このバージョンはスキップ」を選ぶまで残ります（更新の画面を開いただけ・「あとで通知」・Pinshelf の終了では消えません）
 
-**English:** Fixed — the "Checking for updates…" window no longer flashes and closes instantly; it now stays for at least half a second before the result appears.
+**English:** The menu bar icon now shows a down-arrow badge at the bottom right when an update is available (it used to be a small blue dot), and updates are checked hourly instead of daily. Fixed — the update badge no longer disappears before you update; it stays until you install the update or choose to skip that version.
 ]]></description>
-            <enclosure url="https://github.com/yzanbo/pinshelf/releases/download/v0.3.1-beta.1/Pinshelf-0.3.1-beta.1.zip" length="3122323" type="application/octet-stream" sparkle:edSignature="yP1/B8zUmgNtyReBljLbt318DZkUxh91fPzsVUEVIc7mkxO7qQ4rXeL8ofo1nwifQf8nwLP4ZMoNN0zrFw42DA=="/>
+            <enclosure url="https://github.com/yzanbo/pinshelf/releases/download/v0.3.2-beta.1/Pinshelf-0.3.2-beta.1.zip" length="3126234" type="application/octet-stream" sparkle:edSignature="weZbqxAnt2sf2+jyDhonGLt82EfAeRwkmm6TJA0RjxNIIUHhTFdkoyF4giZ7gNPQG6wYyrUP2QZ+0/Q1XxAjAw=="/>
         </item>
     </channel>
 </rss>
