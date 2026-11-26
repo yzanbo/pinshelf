@@ -11,7 +11,7 @@ final class ShelfPersistence {
 
     private let store: ShelfSnapshotStore
     private var pendingSave: Task<Void, Never>?
-    private let logger = Logger(subsystem: "app.pinshelf.Pinshelf", category: "persistence")
+    private let logger = Logger(pinshelf: "persistence")
 
     private static let saveDelay: Duration = .milliseconds(500)
 

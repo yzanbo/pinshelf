@@ -8,7 +8,7 @@ import PinshelfCore
 /// メニューバーのアイコンにドロップを受けるため、SwiftUI の MenuBarExtra ではなく AppKit の NSStatusItem を使う。
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let logger = Logger(subsystem: "app.pinshelf.Pinshelf", category: "app")
+    private static let logger = Logger(pinshelf: "app")
 
     private let coordinator = AppCoordinator()
     private let launchAtLogin = LaunchAtLogin()
@@ -67,8 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 起動したことを記録に残す（更新のあと、どの版が動いているか、「ログイン時に起動」が入ったままかを、あとから確かめられるように）
     private func logLaunch() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let version = Bundle.main.shortVersion ?? "?"
+        let build = Bundle.main.buildNumber ?? "?"
         let loginItem = String(describing: launchAtLogin.status)
         Self.logger.notice("起動しました: 版 \(version, privacy: .public)（ビルド \(build, privacy: .public)）、ログイン時に起動: \(loginItem, privacy: .public)")
     }

@@ -91,14 +91,16 @@ struct GeneralSettingsView: View {
             }
         }
         // システム設定で変えられることがあるので、開いたとき・戻ってきたときに問い合わせ直す
-        .onAppear {
-            launchAtLogin.refresh()
-            updates.refresh()
-        }
+        .onAppear(perform: refreshSystemState)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            launchAtLogin.refresh()
-            updates.refresh()
+            refreshSystemState()
         }
+    }
+
+    /// macOS と更新の仕組みに、今の状態を聞き直す（ログイン項目・自動で確かめるか・最後に確かめた日時）
+    private func refreshSystemState() {
+        launchAtLogin.refresh()
+        updates.refresh()
     }
 
     /// 最後に確かめた日時の説明
@@ -109,6 +111,6 @@ struct GeneralSettingsView: View {
 
     /// 版（1.0.0 より前は「（β 版）」を付ける）
     private static var version: String {
-        AppVersion.displayName(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
+        AppVersion.displayName(Bundle.main.shortVersion ?? "—")
     }
 }

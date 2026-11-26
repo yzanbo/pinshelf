@@ -10,7 +10,8 @@ Pinshelf/
 │   ├── SparkleUpdater        更新（Sparkle）。新しい版を確かめる・知らせる・入れ替える。Sparkle を読み込むのは、このファイルだけ
 │   ├── HotKey                どこからでも使えるショートカット（Carbon の RegisterEventHotKey。アクセシビリティの権限は要らない）
 │   ├── DockIcon・MainMenu    設定・お気に入り一覧・更新の画面を開いている間だけ Dock と上のメニューバーに出す、そのときのアプリのメニュー
-│   └── AppIcon               アプリのアイコンと 1 色の印。アイコンを出すところは、すべてここから使う
+│   ├── AppIcon               アプリのアイコンと 1 色の印。アイコンを出すところは、すべてここから使う
+│   └── AppInfo               記録（Logger の subsystem）と、版・ビルド番号の読み出し
 ├── Monitoring/
 │   └── DragMonitor           ほかのアプリで始まったドラッグも含めて、ドラッグの始まり・動き・終わりを見つける（権限なし）
 ├── Shelf/          棚

@@ -14,7 +14,7 @@ import Sparkle
 final class SparkleUpdater: NSObject, AppUpdateService, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     /// 更新の画面を出している間、Dock にアイコンを出しておく印
     private static let dockHold = "update"
-    private static let logger = Logger(subsystem: "app.pinshelf.Pinshelf", category: "update")
+    private static let logger = Logger(pinshelf: "update")
 
     private let updates: AppUpdates
     private var controller: SPUStandardUpdaterController?
