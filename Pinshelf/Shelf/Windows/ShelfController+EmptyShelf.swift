@@ -20,10 +20,22 @@ extension ShelfController {
     func contentsDidChange() {
         guard closesWhenEmpty, !isHidden, !isUnfoldedByDrag else { return }
         if isOpen, panel.frame.contains(NSEvent.mouseLocation) {
-            // 離れる前に中身が戻ったら（⌘Z・落とした）、見張りをやめる
-            watchPointer(while: { $0.closesWhenEmpty && $0.isOpen }, onLeave: { $0.close() })
+            // 閉じるかは、離れたときに決める（離れる前に ⌘Z・落とすで中身が戻ったら、閉じない）
+            watchPointer(while: { $0.isOpen }, onLeave: { $0.pointerLeftAfterEmptied() })
         } else {
             close()
+        }
+    }
+
+    /// 空になったあと、ポインタが離れた: まだ空なら閉じる
+    ///
+    /// 中身が戻っていたら、ふだんどおりにする（開いたままにしていない画面の端の棚は、帯にたたむ）。
+    /// 空になったときに、ふだんの「離れたら帯にたたむ」見張りをこの見張りに置き換えているため、ここでたたむ
+    private func pointerLeftAfterEmptied() {
+        if closesWhenEmpty {
+            close()
+        } else if state.isDocked, !state.keepsOpen {
+            foldOrClose()
         }
     }
 
