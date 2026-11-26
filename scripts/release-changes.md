@@ -1,14 +1,18 @@
-## この版の主な変更（0.2.0-beta.1 から）
+## この版の主な変更（0.2.1-beta.1 から）
 
 <!-- 出すたびに、この版の変更に書き直す（make publish が、リリースの説明の先頭に入れる） -->
 
+### 新しく使えるようになったこと
+
+- **空になった棚を閉じるか、残すかを選べるようにしました**：設定の「棚」→「空になった棚」で、画面の端の棚・浮いた棚のそれぞれについて選べます（初期設定は、どちらも閉じる）。ポインタが棚の上にあるうちは閉じず、離れたら閉じます（そのあいだは ⌘Z で戻せます）。お気に入りの棚は、空になっても残ります
+
 ### 直したこと
 
-- **狭い画面の端の棚で、角が四角く切れることがあったのを直しました**：中身をほかへ取り出したあと（見出しに元に戻すボタンが出たとき）に、棚が枠より広く描かれ、角丸の角と右端のボタンが欠けていました。見出しのボタンが入りきらないときは、浮かせるボタンを省きます（見出しのダブルクリック・… のメニューでも浮かせられます）
-- **空になった画面の端の棚が残ることがあったのを直しました**：中身をほかのアプリへ移して空になったときに、件数 0 の帯が残ることがありました。空になった画面の端の棚は、帯にたたんでいてもすぐに閉じます。ピンで開いたままにしている棚も、空になったら閉じます（ポインタが棚の上にあるうちは閉じず、離れたら閉じます。お気に入りの棚は残ります）
+- 画面の端の棚で、最後の 1 個を外したあと、ポインタを棚の上に置いたまま ⌘Z で戻すと、ポインタが離れても帯にたたまれず、開いたまま残ることがあったのを直しました
 
 ### 変わったこと
 
-- **押せるボタンに、ポインタを乗せると指の形になるようにしました**：棚の見出しのボタンと、中身にポインタを乗せたときに出るボタン（外す・スタックを分ける）です。macOS の決まりで、棚を一度押したあとに効きます
+- **浮いた棚も、空になったら閉じるようにしました**：これまでは、中身をすべて取り出しても空の棚のまま残っていました。前の動きに戻すときは、設定の「棚」→「浮いた棚が空になったら、閉じる」をオフにします
+- 自分で画面の端にしまった棚も、空になったら閉じます（これまでは件数 0 の帯のまま残っていました）
 
-**English:** Fixed — on the narrowest screen-edge shelf, the rounded corners and the rightmost header button could be cut off after dragging an item out (when the undo button appeared); the float button is now hidden when the header is too narrow. An emptied screen-edge shelf no longer leaves a "0" tab behind, and pinned (keep-open) edge shelves now close when they become empty (favorites stay). Changed — clickable buttons on the shelf show the pointing-hand cursor (after the shelf has been clicked once).
+**English:** New — Settings → Shelf → "Empty shelves" lets you choose whether an emptied shelf closes, separately for screen-edge shelves and floating shelves (both close by default). A shelf stays open while the pointer is over it, so you can still undo with ⌘Z; favorites are always kept. Fixed — an edge shelf could stay open after undoing the removal of its last item. Changed — floating shelves (and shelves you docked to the screen edge yourself) now close when they become empty; turn the setting off to keep them.

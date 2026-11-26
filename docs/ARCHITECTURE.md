@@ -20,7 +20,8 @@ Pinshelf/
 │   │   └── ShelfItemContent+App      中身の名前・アイコン・開き方
 │   ├── Windows/
 │   │   ├── ShelfController(+◯◯)     棚 1 つ（浮いた棚も画面の端の棚も同じ）。+Docking は画面の端にしまう・たたむ・開く、
-│   │   │                             +Resizing は縁で大きさを変える・標準の大きさ、+Identity は名前・色・お気に入りと保存の形式
+│   │   │                             +Resizing は縁で大きさを変える・標準の大きさ、+Identity は名前・色・お気に入りと保存の形式、
+│   │   │                             +EmptyShelf は空になった棚を閉じる（設定の「空になった棚」）
 │   │   ├── ShelfState                棚の見え方（置き方・名前・色・大きさなど。ShelfView が描く）
 │   │   ├── ShelfPanel・ShelfHostingView  棚のウィンドウ（前面のアプリからフォーカスを奪わない）と、ポインタの動きを受ける中身のビュー
 │   │   ├── EdgeShelfDriver           画面の端の棚を、ドラッグに合わせて出す
