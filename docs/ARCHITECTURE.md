@@ -181,6 +181,7 @@ Developer ID に登録しない前提で、[Sparkle](https://sparkle-project.org
 - **サンドボックス**: サンドボックスの中からは自分を入れ替えられないので、Sparkle の入れ替え役（XPC サービス。`SUEnableInstallerLauncherService`）に任せ、それと通信する許可（`mach-lookup` の例外）を足している。ネット接続の許可（`network.client`）は、確認とダウンロードのため
 - **ライブラリの検証**: Team ID のない署名（アドホック・自己署名）では、Hardened Runtime のままだと、埋め込んだ Sparkle の読み込みを断られる。`cs.disable-library-validation` で検証を切っている（切らないと、起動で落ちる）
 - **知らせ方**: メニューバーに常駐するアプリなので、自動で見つけた新しい版は画面に割り込ませず、アイコンの印とメニューで知らせる（Sparkle の「控えめな知らせ」の作法。`standardUserDriverShouldHandleShowingScheduledUpdate` で、いつも自分で受け持つ）。メニューから選ぶと、Sparkle の更新の画面が前面に出る
+- **確認中の小窓の長さ**: 問い合わせはすぐ終わり、「アップデートを確認中…」の小窓が一瞬で閉じてちらついて見えるので、Sparkle の標準の画面（`SPUStandardUserDriver`）を `PacedUserDriver` で包み、小窓を少なくとも 0.5 秒は出してから結果の画面に渡す（そのため `SPUStandardUpdaterController` ではなく、`SPUUpdater` を自分で作る）
 - **画面の側との分け方**: Sparkle を読み込むのは `SparkleUpdater` だけ。メニューと設定は、`PinshelfCore` の `AppUpdates`（状態）を通して使う。Sparkle なしでアプリのコードをビルドする `make readme-images` と、テストのため
 - **版の一覧**: `appcast.xml` をリポジトリの main に置き、アプリは `raw.githubusercontent.com` から読む（β 版は GitHub の「最新の版」に出ないので、Releases の latest は使えない）。載せるのは、いちばん新しい版だけ。この版の変更（`scripts/release-changes.md`）を、Markdown のまま埋め込む
 - **版の比べ方**: Sparkle は `CFBundleVersion`（ビルド番号）で新旧を比べる。出すたびに必ず上げる
