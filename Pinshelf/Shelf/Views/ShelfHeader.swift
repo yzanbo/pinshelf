@@ -30,6 +30,7 @@ struct ShelfHeader: View {
                         .background(.quaternary, in: Circle())
                 }
                 .buttonStyle(.plain)
+                .clickablePointer()
                 .help(state.isFavorite ? "隠す（メニューバーの「お気に入りの棚」から出し直せます）" : "閉じる（メニューバーの「最近閉じた棚」から開き直せます）")
 
                 Button(action: actions.toggleDock) {
@@ -37,6 +38,7 @@ struct ShelfHeader: View {
                         .font(.system(size: 11))
                 }
                 .buttonStyle(.borderless)
+                .clickablePointer()
                 .help(state.isDocked ? "浮かせる（見出しをつかんで真ん中へ運ぶ・ダブルクリックでも）" : "画面の端にしまう（画面の端まで運ぶ・見出しのダブルクリックでも）")
 
                 favoriteButton
@@ -59,6 +61,7 @@ struct ShelfHeader: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .clickablePointer()
                 .help("棚のメニュー（名前・色・お気に入り・大きさ）")
                 // 画面の端にある棚は、開いたままにするピンと、帯にたたむボタン（画面の端の向きの矢印）
                 if let edge = state.dockedEdge {
@@ -68,6 +71,7 @@ struct ShelfHeader: View {
                             .foregroundStyle(state.keepsOpen ? Color.accentColor : Color.secondary)
                     }
                     .buttonStyle(.borderless)
+                    .clickablePointer()
                     .help(state.keepsOpen
                         ? "開いたままにしています（押すと、ポインタが離れたら帯にたたむようになります）"
                         : "開いたままにする（いまは、ポインタが離れると帯にたたみます）")
@@ -76,6 +80,7 @@ struct ShelfHeader: View {
                             .font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.borderless)
+                    .clickablePointer()
                     .help("帯にたたむ")
                 }
             }
@@ -183,6 +188,7 @@ struct ShelfHeader: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
+        .clickablePointer()
         .help(state.isFavorite
             ? "お気に入り（閉じても中身ごと残ります）。押すと、お気に入りから外します"
             : "お気に入りにする（閉じても中身ごと残り、メニューバーから出し直せます）")
@@ -201,6 +207,7 @@ struct UndoButton: View {
             Image(systemName: "arrow.uturn.backward")
         }
         .buttonStyle(.borderless)
+        .clickablePointer()
         .help("外したものを戻す（⌘Z）")
     }
 }

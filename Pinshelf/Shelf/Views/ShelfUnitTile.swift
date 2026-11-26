@@ -56,6 +56,7 @@ struct ShelfUnitTile: View {
                         .symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.plain)
+                .clickablePointer()
                 .help(isStack ? "スタックごと棚から外す" : "棚から外す")
             }
         }
@@ -68,6 +69,7 @@ struct ShelfUnitTile: View {
                         .symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.plain)
+                .clickablePointer()
                 .help("スタックを分ける")
             }
         }
