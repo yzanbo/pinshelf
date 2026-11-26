@@ -9,7 +9,11 @@ import PinshelfCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = AppCoordinator()
     private let launchAtLogin = LaunchAtLogin()
-    private lazy var settingsWindow = SettingsWindowController(launchAtLogin: launchAtLogin)
+    /// 更新の状態（メニューバーのメニューと、設定の「一般」に出す）
+    private let updates = AppUpdates()
+    /// 更新の仕組み（公開鍵の入っていないビルドでは nil。SparkleUpdater）
+    private var updater: SparkleUpdater?
+    private lazy var settingsWindow = SettingsWindowController(launchAtLogin: launchAtLogin, updates: updates)
     private lazy var favoritesWindow = FavoritesWindowController(list: coordinator.favoritesList)
     private var statusItem: StatusItemController?
     private lazy var mainMenu = MainMenu(openSettings: { [weak self] in self?.openSettings() })
@@ -36,8 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handleTerminateSignal()
         coordinator.openSettings = { [weak self] in self?.openSettings() }
         coordinator.start()
+        updater = SparkleUpdater.start(updates: updates)
 
-        let statusItem = StatusItemController()
+        let statusItem = StatusItemController(updates: updates)
         statusItem.onNewShelf = { [weak self] in self?.coordinator.openShelfFromMenu() }
         statusItem.onOpenEdgeShelf = { [weak self] in self?.coordinator.openEdgeShelf() }
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }

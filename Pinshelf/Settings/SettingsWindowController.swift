@@ -7,10 +7,12 @@ import SwiftUI
 /// メニューバー常駐のアプリでは SwiftUI の Settings が後ろに隠れることがあるので、自前のウィンドウで開き、前面に出す。
 final class SettingsWindowController {
     private let launchAtLogin: LaunchAtLogin
+    private let updates: AppUpdates
     private var window: NSWindow?
 
-    init(launchAtLogin: LaunchAtLogin) {
+    init(launchAtLogin: LaunchAtLogin, updates: AppUpdates) {
         self.launchAtLogin = launchAtLogin
+        self.updates = updates
     }
 
     func show() {
@@ -24,7 +26,7 @@ final class SettingsWindowController {
         let tabs = SettingsTabViewController()
         tabs.tabStyle = .toolbar
         // 一般 → 棚の出し方 → 棚そのもの → 中身 → 例外、の順に並べる
-        tabs.addTabViewItem(makeTab("一般", symbol: "gearshape", view: GeneralSettingsView(launchAtLogin: launchAtLogin)))
+        tabs.addTabViewItem(makeTab("一般", symbol: "gearshape", view: GeneralSettingsView(launchAtLogin: launchAtLogin, updates: updates)))
         tabs.addTabViewItem(makeTab("出し方", symbol: "cursorarrow.motionlines", view: TriggerSettingsView()))
         tabs.addTabViewItem(makeTab("棚", symbol: "rectangle.stack", view: ShelfSettingsView()))
         tabs.addTabViewItem(makeTab("中身", symbol: "tray.full", view: ContentsSettingsView()))
