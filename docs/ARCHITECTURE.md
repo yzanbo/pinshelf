@@ -66,6 +66,7 @@ PinshelfCore/       画面に依存しないロジック（Swift パッケージ
 scripts/
 ├── make-app-icon.swift      アプリのアイコンと 1 色の印をコードで描いて、Assets.xcassets に書き出す（make icon）
 ├── create-dev-cert.sh       開発用の署名の証明書「Pinshelf Dev」を作る（make cert）
+├── readme-images/           README の見本の画像を作る（make readme-images。棚・帯はアプリと同じ部品で実際に出して写し、架空のデスクトップに並べる）
 └── release-*.md             リリースの説明（β 版の注意・この版の変更・ダウンロードと開き方。make publish がつなげる）
 
 project.yml         XcodeGen の設定（Pinshelf.xcodeproj はここから作るので、リポジトリには入れない）

@@ -29,7 +29,7 @@ XCODEBUILD_FLAGS ?=
 XCODEBUILD := xcodebuild -project Pinshelf.xcodeproj -scheme Pinshelf -sdk macosx \
 	-derivedDataPath $(DERIVED_DATA) CODE_SIGN_IDENTITY="$(SIGN_IDENTITY)" $(XCODEBUILD_FLAGS)
 
-.PHONY: generate build release dist publish run stop install uninstall test clean cert icon
+.PHONY: generate build release dist publish run stop install uninstall test clean cert icon readme-images
 
 # アイコンを描くスクリプトをビルドする場所
 ICON_TOOL_DIR := $(DERIVED_DATA)/icon-tool
@@ -120,6 +120,34 @@ icon:
 	mkdir -p $(ICON_TOOL_DIR)
 	swiftc -O -module-cache-path $(ICON_TOOL_DIR)/cache scripts/make-app-icon.swift -o $(ICON_TOOL_DIR)/make-app-icon
 	$(ICON_TOOL_DIR)/make-app-icon
+
+# README の見本の画像を作り直す（棚の見た目を変えたとき。docs/images に書き出す。Pinshot と同じ考え方）。
+# 棚・帯はアプリと同じ部品で実際に出して写すので、作っている間、画面の右端に棚が少しのあいだ出る
+README_TOOL_DIR := $(DERIVED_DATA)/readme-images
+README_TOOL_APP := $(README_TOOL_DIR)/ReadmeImages.app
+SWIFT_TARGET := $(shell uname -m)-apple-macos26.0
+SWIFT_PLUGINS := $(shell xcode-select -p)/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins
+# swiftc に足す引数（ふだんは空）
+SWIFTC_FLAGS ?=
+readme-images:
+	mkdir -p "$(README_TOOL_APP)/Contents/MacOS" "$(README_TOOL_APP)/Contents/Resources"
+	cp scripts/readme-images/Info.plist "$(README_TOOL_APP)/Contents/Info.plist"
+	xcrun actool Pinshelf/Assets.xcassets --compile "$(README_TOOL_APP)/Contents/Resources" --platform macosx \
+		--minimum-deployment-target 26.0 --app-icon AppIcon --output-partial-info-plist "$(README_TOOL_DIR)/assets-info.plist" >/dev/null
+	@# 画面に依存しないロジック（PinshelfCore）を、静的ライブラリにする
+	xcrun swiftc -parse-as-library -emit-library -static -emit-module -module-name PinshelfCore -swift-version 6 \
+		-target $(SWIFT_TARGET) -module-cache-path "$(README_TOOL_DIR)/module-cache" $(SWIFTC_FLAGS) \
+		-emit-module-path "$(README_TOOL_DIR)/PinshelfCore.swiftmodule" -o "$(README_TOOL_DIR)/libPinshelfCore.a" \
+		PinshelfCore/Sources/PinshelfCore/*.swift
+	@# アプリのコード（入口の AppDelegate を除く）と、画像を作るプログラムを一緒にビルドする（アプリと同じ設定で）
+	find Pinshelf -name '*.swift' ! -name AppDelegate.swift > "$(README_TOOL_DIR)/sources.txt"
+	echo scripts/readme-images/main.swift >> "$(README_TOOL_DIR)/sources.txt"
+	xcrun swiftc -swift-version 6 -target $(SWIFT_TARGET) -default-isolation MainActor \
+		-enable-upcoming-feature NonisolatedNonsendingByDefault -enable-upcoming-feature InferIsolatedConformances \
+		-plugin-path "$(SWIFT_PLUGINS)" -module-cache-path "$(README_TOOL_DIR)/module-cache" $(SWIFTC_FLAGS) \
+		-I "$(README_TOOL_DIR)" -L "$(README_TOOL_DIR)" -lPinshelfCore @"$(README_TOOL_DIR)/sources.txt" \
+		-o "$(README_TOOL_APP)/Contents/MacOS/ReadmeImages"
+	"$(README_TOOL_APP)/Contents/MacOS/ReadmeImages" docs/images
 
 # 開発用の署名の証明書「Pinshelf Dev」を作る（一度だけ。途中でパスワードを聞かれる）
 cert:
