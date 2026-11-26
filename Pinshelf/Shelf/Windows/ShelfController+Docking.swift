@@ -137,25 +137,6 @@ extension ShelfController {
         }
     }
 
-    /// 空になったので、閉じてよい画面端の棚か（落としたものを読み込んでいる途中は、空に見えても閉じない。お気に入りの棚は、空でも残す）
-    var isEmptyEdgeShelf: Bool {
-        state.isEdgeShelf && model.isEmpty && model.isSettled && !state.isFavorite
-    }
-
-    /// 中身が変わった: 画面の端で開いたままにしている棚も、空になったら閉じる
-    ///
-    /// 開いたままにしていない棚と同じく、ポインタが棚の上にあるうちは閉じず、離れたら閉じる（すでに離れていれば、すぐに閉じる）。
-    /// 開いたままにしていない棚は、ポインタが離れて帯にたたむときに閉じる（foldOrClose）。
-    func contentsDidChange() {
-        guard state.keepsOpen, state.isDocked, !isHidden, !isUnfoldedByDrag, isEmptyEdgeShelf else { return }
-        if state.isUnfolded, panel.frame.contains(NSEvent.mouseLocation) {
-            // 離れる前に中身が戻ったら（⌘Z・落とした）、見張りをやめる
-            watchPointer(while: { $0.isEmptyEdgeShelf }, onLeave: { $0.close() })
-        } else {
-            close()
-        }
-    }
-
     /// 画面の端で開いたままにする・しないを切り替える（見出しのピン）
     ///
     /// 開いたままにしたら、たたんである帯を開く。しないにしたら、開いている棚をたたむ（ポインタが棚の上にあれば、離れたときにたたむ）。
@@ -261,6 +242,28 @@ extension ShelfController {
         guard state.isEdgeShelf else { return }
         state.isEdgeShelf = false
         onResignEdgeShelf?(self)
+    }
+
+    /// 空になったので、閉じてよい画面端の棚か（落としたものを読み込んでいる途中は、空に見えても閉じない。お気に入りの棚は、空でも残す）
+    var isEmptyEdgeShelf: Bool {
+        state.isEdgeShelf && model.isEmpty && model.isSettled && !state.isFavorite
+    }
+
+    /// 中身が変わった: 空になった画面端の棚は、件数 0 の帯や空の棚を残さずに閉じる
+    ///
+    /// ポインタが棚の上にあるうちは閉じず、離れたら閉じる（もう離れている・帯にたたんでいるなら、すぐに閉じる）。
+    /// 帯にたたむときの foldOrClose だけでは、次のときに閉じられないため:
+    /// - ほかのアプリへ取り出した: 棚から外れるのは、受け取る側が移し終えたあと（ポインタが離れて、帯にたたんだあと）になる
+    /// - 開いたままにしている: ポインタが離れても、帯にたたまない
+    func contentsDidChange() {
+        // 浮かせた・隠した棚は、画面端の棚でなくなるので、ここでは閉じない
+        guard isEmptyEdgeShelf, !isUnfoldedByDrag else { return }
+        if state.isUnfolded, panel.frame.contains(NSEvent.mouseLocation) {
+            // 離れる前に中身が戻ったら（⌘Z・落とした）、見張りをやめる
+            watchPointer(while: { $0.isEmptyEdgeShelf }, onLeave: { $0.close() })
+        } else {
+            close()
+        }
     }
 
     // MARK: - 利用者が運んだとき
