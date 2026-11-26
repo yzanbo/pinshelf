@@ -126,7 +126,7 @@ make uninstall
 | `make stop` | 動いている Pinshelf を終了する（棚を保存してから終わるのを待つ） |
 | `make generate` | `Pinshelf.xcodeproj` を作るだけ（Xcode で開くとき） |
 | `make icon` | アプリのアイコンを描き直す（`scripts/make-app-icon.swift` を変えたとき） |
-| `make readme-images` | README の見本の画像（`docs/images/`）を作り直す（棚の見た目を変えたとき。作っている間、画面の右端に棚が少し出る） |
+| `make readme-images` | README の見本の画像（`docs/images/`）を作り直す（棚の見た目を変えたとき。作っている間、画面に棚やウィンドウが少し出る） |
 
 `Pinshelf.xcodeproj` は `project.yml` から作るため、リポジトリには入れていません。Xcode で開いて ⌘R で動かすこともできます（`make generate` のあと `open Pinshelf.xcodeproj`）。
 

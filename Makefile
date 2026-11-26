@@ -122,7 +122,7 @@ icon:
 	$(ICON_TOOL_DIR)/make-app-icon
 
 # README の見本の画像を作り直す（棚の見た目を変えたとき。docs/images に書き出す。Pinshot と同じ考え方）。
-# 棚・帯はアプリと同じ部品で実際に出して写すので、作っている間、画面の右端に棚が少しのあいだ出る
+# 棚・帯・お気に入り一覧はアプリと同じ部品で実際に出して写すので、作っている間、画面に棚やウィンドウが少しのあいだ出る
 README_TOOL_DIR := $(DERIVED_DATA)/readme-images
 README_TOOL_APP := $(README_TOOL_DIR)/ReadmeImages.app
 SWIFT_TARGET := $(shell uname -m)-apple-macos26.0
