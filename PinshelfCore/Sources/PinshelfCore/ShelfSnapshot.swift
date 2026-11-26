@@ -232,18 +232,53 @@ public struct RecentShelves: Equatable, Sendable {
 
 // MARK: - 棚と保存の形式の変換
 
+/// 保存したファイルを、どう戻せたかの数
+///
+/// 記録に残して、あとから確かめられるようにする（アプリを入れ替えたあとも、ブックマークでファイルを開けているかなど）。
+public struct FileRestoreTally: Sendable, Equatable {
+    /// ブックマークから戻せた数
+    public var byBookmark: Int
+    /// ブックマークが使えず、パスで見つけて戻した数
+    public var byPath: Int
+    /// 見つからず、戻さなかった数
+    public var missing: Int
+
+    public init(byBookmark: Int = 0, byPath: Int = 0, missing: Int = 0) {
+        self.byBookmark = byBookmark
+        self.byPath = byPath
+        self.missing = missing
+    }
+
+    /// 戻そうとしたファイルの数
+    public var total: Int {
+        byBookmark + byPath + missing
+    }
+
+    public static func + (lhs: FileRestoreTally, rhs: FileRestoreTally) -> FileRestoreTally {
+        FileRestoreTally(
+            byBookmark: lhs.byBookmark + rhs.byBookmark,
+            byPath: lhs.byPath + rhs.byPath,
+            missing: lhs.missing + rhs.missing
+        )
+    }
+
+    public static func += (lhs: inout FileRestoreTally, rhs: FileRestoreTally) {
+        lhs = lhs + rhs
+    }
+}
+
 /// 保存したものから組み立てた棚
 public struct RestoredShelf: Sendable {
     public var shelf: Shelf
     /// ファイルのブックマーク（古くなっていたものは作り直したもの）
     public var bookmarks: [ShelfItem.ID: Data]
-    /// 見つからなかったファイルの数
-    public var missingCount: Int
+    /// ファイルをどう戻せたかの数
+    public var files: FileRestoreTally
 
-    public init(shelf: Shelf = Shelf(), bookmarks: [ShelfItem.ID: Data] = [:], missingCount: Int = 0) {
+    public init(shelf: Shelf = Shelf(), bookmarks: [ShelfItem.ID: Data] = [:], files: FileRestoreTally = FileRestoreTally()) {
         self.shelf = shelf
         self.bookmarks = bookmarks
-        self.missingCount = missingCount
+        self.files = files
     }
 }
 
@@ -267,7 +302,7 @@ public enum ShelfArchiver {
     public static func restore(_ stored: StoredShelf, using coding: any BookmarkCoding) -> RestoredShelf {
         var items: [ShelfItem] = []
         var bookmarks: [ShelfItem.ID: Data] = [:]
-        var missing = 0
+        var files = FileRestoreTally()
 
         for record in stored.items {
             switch record.content {
@@ -275,13 +310,15 @@ public enum ShelfArchiver {
                 if let bookmark, let resolved = coding.resolve(bookmark) {
                     items.append(ShelfItem(id: record.id, content: .file(resolved.url), addedAt: record.addedAt, isLocked: record.isLocked, stackID: record.stackID))
                     bookmarks[record.id] = resolved.bookmark
+                    files.byBookmark += 1
                 } else if let url = coding.existingFile(atPath: path) {
                     items.append(ShelfItem(id: record.id, content: .file(url), addedAt: record.addedAt, isLocked: record.isLocked, stackID: record.stackID))
                     if let fresh = coding.makeBookmark(for: url) {
                         bookmarks[record.id] = fresh
                     }
+                    files.byPath += 1
                 } else {
-                    missing += 1
+                    files.missing += 1
                 }
             case .link(let url):
                 items.append(ShelfItem(id: record.id, content: .link(url), addedAt: record.addedAt, isLocked: record.isLocked, stackID: record.stackID))
@@ -289,6 +326,6 @@ public enum ShelfArchiver {
                 items.append(ShelfItem(id: record.id, content: .text(text), addedAt: record.addedAt, isLocked: record.isLocked, stackID: record.stackID))
             }
         }
-        return RestoredShelf(shelf: Shelf(items: items), bookmarks: bookmarks, missingCount: missing)
+        return RestoredShelf(shelf: Shelf(items: items), bookmarks: bookmarks, files: files)
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import os
 import PinshelfCore
 
 /// アプリの入口
@@ -7,6 +8,8 @@ import PinshelfCore
 /// メニューバーのアイコンにドロップを受けるため、SwiftUI の MenuBarExtra ではなく AppKit の NSStatusItem を使う。
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let logger = Logger(subsystem: "app.pinshelf.Pinshelf", category: "app")
+
     private let coordinator = AppCoordinator()
     private let launchAtLogin = LaunchAtLogin()
     /// 更新の状態（メニューバーのメニューと、設定の「一般」に出す）
@@ -41,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.openSettings = { [weak self] in self?.openSettings() }
         coordinator.start()
         updater = SparkleUpdater.start(updates: updates)
+        logLaunch()
 
         let statusItem = StatusItemController(updates: updates)
         statusItem.onNewShelf = { [weak self] in self?.coordinator.openShelfFromMenu() }
@@ -59,6 +63,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.handleMenuBarDrop(pasteboard, below: iconFrame) ?? false
         }
         self.statusItem = statusItem
+    }
+
+    /// 起動したことを記録に残す（更新のあと、どの版が動いているか、「ログイン時に起動」が入ったままかを、あとから確かめられるように）
+    private func logLaunch() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let loginItem = String(describing: launchAtLogin.status)
+        Self.logger.notice("起動しました: 版 \(version, privacy: .public)（ビルド \(build, privacy: .public)）、ログイン時に起動: \(loginItem, privacy: .public)")
     }
 
     /// 設定のウィンドウを開く（メニューバーのアイコン・上のメニューバー・棚のメニューから）

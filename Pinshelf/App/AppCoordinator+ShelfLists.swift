@@ -45,8 +45,7 @@ extension AppCoordinator {
         stored.isHidden = false
         stored.isEdgeShelf = false
         let coding = SystemBookmarkCoding()
-        let missing = restoreShelf(stored, using: coding)
-        persistence.reportMissingFiles(missing)
+        persistence.reportRestoredFiles(restoreShelf(stored, using: coding))
         if !shelves.contains(where: { $0.id == stored.id }) {
             // ファイルがすべて見つからず、戻せなかった
             NSSound.beep()

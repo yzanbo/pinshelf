@@ -65,7 +65,7 @@ struct ShelfArchiverTests {
 
         #expect(restored.shelf == shelf)
         #expect(restored.bookmarks == bookmarks)
-        #expect(restored.missingCount == 0)
+        #expect(restored.files == FileRestoreTally(byBookmark: 2))
     }
 
     @Test("ファイルが移動していたら、新しい場所で戻す")
@@ -107,7 +107,7 @@ struct ShelfArchiverTests {
 
         let restored = ShelfArchiver.restore(ShelfArchiver.archive(shelf, bookmarks: bookmarks), using: coding)
 
-        #expect(restored.missingCount == 1)
+        #expect(restored.files == FileRestoreTally(byBookmark: 1, missing: 1))
         #expect(restored.shelf.items.map(\.content) == [.file(fileB), .link(link), .text("メモ")])
     }
 
@@ -122,6 +122,17 @@ struct ShelfArchiverTests {
 
         #expect(restored.shelf.items.map(\.content) == [.file(fileA)])
         #expect(restored.bookmarks[shelf.items[0].id] == coding.makeBookmark(for: fileA))
+        #expect(restored.files == FileRestoreTally(byPath: 1))
+    }
+
+    @Test("ファイルをどう戻せたかの数は、棚をまたいで足し合わせられる")
+    func talliesAddUp() {
+        var files = FileRestoreTally(byBookmark: 2, missing: 1)
+        files += FileRestoreTally(byBookmark: 1, byPath: 3)
+
+        #expect(files == FileRestoreTally(byBookmark: 3, byPath: 3, missing: 1))
+        #expect(files.total == 7)
+        #expect(FileRestoreTally().total == 0)
     }
 }
 
